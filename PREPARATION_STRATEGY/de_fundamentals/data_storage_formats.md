@@ -1,7 +1,3 @@
-Got it 👍 — here is your content **kept exactly in your original structure and wording**, just converted cleanly into **Markdown** (no rephrasing, no added content):
-
----
-
 ## Data Lake vs. Delta Lake vs. Apache Iceberg:
 
 ### What’s the difference? 🧊

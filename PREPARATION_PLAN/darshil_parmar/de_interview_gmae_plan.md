@@ -83,4 +83,4 @@ Most people fail not because they're under-skilled, but because they're under-pr
 
 💡 **Fix that with structure.**
 
-![Data Platform Architecture](../image_references/de_interview_game_plan.png)
+![Data Platform Architecture](../image_references/IMG_1052.jpeg)

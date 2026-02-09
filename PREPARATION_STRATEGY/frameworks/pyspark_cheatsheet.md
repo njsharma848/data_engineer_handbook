@@ -13,11 +13,12 @@
 	11.Pivoting & Reshaping
 	12.Advanced Patterns (UDFs, Broadcast, Caching)
 
-1. Ranking & Top-N Problems
-Trigger Words
+### 1. Ranking & Top-N Problems
+#### Trigger Words
 	∙	“top N”, “highest”, “lowest”, “rank”, “best performers”
 	∙	“nth highest”, “per group”, “for each partition”
-Key Pattern
+
+**Key Pattern**
 
 from pyspark.sql import Window
 from pyspark.sql.functions import row_number, rank, dense_rank

@@ -793,8 +793,8 @@ invalid_combinations = df.filter(
 )
 ```
 
-Validation Framework Template
-
+### Validation Framework Template
+```python
 class DataValidator:
     def __init__(self, df):
         self.df = df
@@ -856,14 +856,15 @@ validator.check_duplicates(["order_id"])
 validator.check_range("age", min_val=0, max_val=120)
 validator.check_referential_integrity(customers_df, "customer_id")
 report = validator.get_report()
+```
 
+### 7. Column Transformations
+#### Trigger Words
+	- “add column”, “transform”, “calculate”, “derive”
+	- “convert”, “parse”, “extract”, “split”, “concat”
 
-7. Column Transformations
-Trigger Words
-	∙	“add column”, “transform”, “calculate”, “derive”
-	∙	“convert”, “parse”, “extract”, “split”, “concat”
-Common Transformations
-
+#### Common Transformations
+```python
 # Pattern 1: Simple column operations
 df.withColumn("new_col", F.col("existing_col") * 2)
 
@@ -883,10 +884,10 @@ df.withColumn("upper_name", F.upper(F.col("name")))
 df.withColumn("year", F.year(F.col("date")))
   .withColumn("month", F.month(F.col("date")))
   .withColumn("day_of_week", F.dayofweek(F.col("date")))
+```
 
-
-Examples
-
+#### Examples
+```python
 # Example 1: Complex conditional logic
 df_categorized = df.withColumn(
     "risk_category",
@@ -987,7 +988,7 @@ df_casted = df.withColumn(
     "timestamp_ts",
     F.col("timestamp_string").cast("timestamp")
 )
-
+```
 
 String Function Quick Reference
 

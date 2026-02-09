@@ -990,8 +990,8 @@ df_casted = df.withColumn(
 )
 ```
 
-String Function Quick Reference
-
+### String Function Quick Reference
+```python
 # Concatenation
 F.concat(F.col("first"), F.lit(" "), F.col("last"))
 F.concat_ws("|", F.col("a"), F.col("b"), F.col("c"))
@@ -1023,14 +1023,15 @@ F.length(F.col("text"))
 # Padding
 F.lpad(F.col("text"), 10, "0")  # Left pad to length 10 with '0'
 F.rpad(F.col("text"), 10, " ")  # Right pad
+```
 
+### 8. Complex Filtering & Conditions
+#### Trigger Words
+	- “filter”, “where”, “exclude”, “only”, “remove”
+	- “condition”, “criteria”, “matching”, “satisfying”
 
-8. Complex Filtering & Conditions
-Trigger Words
-	∙	“filter”, “where”, “exclude”, “only”, “remove”
-	∙	“condition”, “criteria”, “matching”, “satisfying”
-Filtering Patterns
-
+#### Filtering Patterns
+```python
 # Pattern 1: Simple conditions
 df.filter(F.col("age") > 18)
 df.filter((F.col("age") > 18) & (F.col("country") == "US"))
@@ -1045,10 +1046,10 @@ df.filter(F.col("email").isNotNull())
 # Pattern 4: String matching
 df.filter(F.col("name").like("%smith%"))
 df.filter(F.col("email").rlike(r'^[a-z]+@example\.com$'))
+```
 
-
-Examples
-
+#### Examples
+```python
 # Example 1: Multiple AND conditions
 filtered = df.filter(
     (F.col("age") >= 18) &
@@ -1143,7 +1144,7 @@ above_avg_orders = (df
 
 # Example 10: Case-insensitive filtering
 df.filter(F.lower(F.col("status")) == "active")
-
+```
 
 9. Performance Optimization Patterns
 Key Optimization Strategies

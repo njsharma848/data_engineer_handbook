@@ -378,12 +378,13 @@ gaps = (df
 )
 ```
 
-4. Aggregation Patterns
-Trigger Words
-	∙	“total”, “count”, “average”, “sum”, “group by”
-	∙	“per category”, “aggregate”, “summary”, “breakdown”
-Key Patterns
+### 4. Aggregation Patterns
+#### Trigger Words
+	- “total”, “count”, “average”, “sum”, “group by”
+	- “per category”, “aggregate”, “summary”, “breakdown”
 
+#### Key Patterns
+```python
 # Pattern 1: Simple aggregation
 df.groupBy("category").agg(
     F.count("*").alias("count"),
@@ -404,10 +405,10 @@ df.groupBy("region").agg(
     F.sum(F.when(F.col("type") == "A", F.col("amount")).otherwise(0)).alias("type_a_total"),
     F.sum(F.when(F.col("type") == "B", F.col("amount")).otherwise(0)).alias("type_b_total")
 )
+```
 
-
-Examples
-
+### Examples
+```python
 # Example 1: Group by with multiple columns
 sales_summary = df.groupBy("region", "product_category", "year").agg(
     F.sum("sales").alias("total_sales"),
@@ -474,7 +475,7 @@ high_volume_products = (df
     .agg(F.sum("quantity").alias("total_quantity"))
     .filter(F.col("total_quantity") > 1000)
 )
-
+```
 
 Advanced Aggregation Functions
 

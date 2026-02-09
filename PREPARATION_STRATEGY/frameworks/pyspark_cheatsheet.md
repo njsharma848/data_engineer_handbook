@@ -643,12 +643,13 @@ result = (orders
 |✅ Select only needed columns before join |❌ Keep all columns from both tables              |
 |✅ Use appropriate join type              |❌ Use outer join when inner join suffices        |
 
-6. Data Quality & Validation
-Trigger Words
-	∙	“validate”, “check quality”, “null values”, “duplicates”
-	∙	“data profiling”, “schema validation”, “outliers”
-Validation Patterns
+### 6. Data Quality & Validation
+#### Trigger Words
+	- “validate”, “check quality”, “null values”, “duplicates”
+	- “data profiling”, “schema validation”, “outliers”
 
+#### Validation Patterns
+```python
 # Pattern 1: Null checks
 null_counts = df.select([
     F.count(F.when(F.col(c).isNull(), c)).alias(c)
@@ -664,10 +665,10 @@ invalid_values = df.filter(
     (F.col("age") > 120) |
     (F.col("salary") < 0)
 )
+```
 
-
-Comprehensive Examples
-
+### Comprehensive Examples
+```python
 # Example 1: Complete data quality report
 def data_quality_report(df):
     """Generate comprehensive DQ report"""
@@ -790,7 +791,7 @@ invalid_combinations = df.filter(
     (F.col("discounted_price") > F.col("original_price")) |
     ((F.col("status") == "shipped") & (F.col("shipped_date").isNull()))
 )
-
+```
 
 Validation Framework Template
 

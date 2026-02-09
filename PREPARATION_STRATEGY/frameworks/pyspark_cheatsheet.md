@@ -1146,9 +1146,9 @@ above_avg_orders = (df
 df.filter(F.lower(F.col("status")) == "active")
 ```
 
-9. Performance Optimization Patterns
-Key Optimization Strategies
-
+### 9. Performance Optimization Patterns
+#### Key Optimization Strategies
+```python
 # 1. CACHING - For DataFrames used multiple times
 df.cache()  # or df.persist()
 # ... use df multiple times
@@ -1169,10 +1169,10 @@ df.filter(F.col("date") >= "2024-01-01") \  # Filter first
 
 # 5. SELECT ONLY NEEDED COLUMNS
 df.select("id", "name", "amount")  # Not df.select("*")
+```
 
-
-Examples
-
+#### Examples
+```python
 # Example 1: Optimize multiple aggregations
 # ❌ BAD: Multiple passes
 count1 = df.filter(F.col("type") == "A").count()
@@ -1252,7 +1252,7 @@ exact_count = df.select(F.countDistinct("user_id")).collect()
 
 # ✅ FAST: Approximate count distinct (faster, 95% accurate)
 approx_count = df.select(F.approx_count_distinct("user_id", rsd=0.05)).collect()
-
+```
 
 Performance Checklist
 ✅ DO:

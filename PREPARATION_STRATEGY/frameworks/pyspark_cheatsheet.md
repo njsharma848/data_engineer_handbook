@@ -1,30 +1,23 @@
-Excellent! Let me create a comprehensive PySpark cheat sheet similar to the SQL one.
-
 PySpark Problem Types - Complete Cheat Sheet
 TABLE OF CONTENTS
+	1.	Ranking & Top-N Problems
+	2.	Running/Cumulative Calculations
+	3.	Time-Series & Gap Analysis
+	4.	Aggregation Patterns
+	5.	Join Strategies & Optimization
+	6.	Data Quality & Validation
+	7.	Column Transformations
+	8.	Complex Filtering & Conditions
+	9.	Performance Optimization Patterns
+	10.	Deduplication Strategies
+	11.	Pivoting & Reshaping
+	12.	Advanced Patterns (UDFs, Broadcast, Caching)
 
 1. Ranking & Top-N Problems
-2. Running/Cumulative Calculations  
-3. Time-Series & Gap Analysis
-4. Aggregation Patterns
-5. Join Strategies & Optimization
-6. Data Quality & Validation
-7. Column Transformations
-8. Complex Filtering & Conditions
-9. Performance Optimization Patterns
-10. Deduplication Strategies
-11. Pivoting & Reshaping
-12. Advanced Patterns (UDFs, Broadcast, Caching)
-
-
-PROBLEM TYPE 1: Ranking & Top-N
-Trigger Words:
-
-"top N", "highest", "lowest", "rank", "best performers", 
-"nth highest", "per group", "for each partition"
-
-
-Key Pattern:
+Trigger Words
+	∙	“top N”, “highest”, “lowest”, “rank”, “best performers”
+	∙	“nth highest”, “per group”, “for each partition”
+Key Pattern
 
 from pyspark.sql import Window
 from pyspark.sql.functions import row_number, rank, dense_rank
@@ -36,7 +29,7 @@ df_ranked = df.withColumn("rank", row_number().over(window_spec))
 df_top_n = df_ranked.filter(F.col("rank") <= N)
 
 
-Function Choice Matrix:
+Function Choice Matrix
 
 
 
@@ -48,7 +41,7 @@ Function Choice Matrix:
 |Percentile ranking        |`percent_rank()`|0.0 to 1.0        |
 |Divide into N buckets     |`ntile(N)`      |Quartiles, deciles|
 
-Examples:
+Examples
 
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
@@ -100,13 +93,13 @@ df_with_ranks = (df
 )
 
 
-Common Pitfalls:
+Common Pitfalls
 
 # ❌ WRONG: Using limit() on grouped data
 df.orderBy(F.col("salary").desc()).limit(3)  
 # Only gives top 3 overall, not per group!
 
-# ✓ CORRECT: Use window function
+# ✅ CORRECT: Use window function
 window_spec = Window.partitionBy("dept").orderBy(F.col("salary").desc())
 df.withColumn("rn", F.row_number().over(window_spec)).filter(F.col("rn") <= 3)
 
@@ -114,19 +107,16 @@ df.withColumn("rn", F.row_number().over(window_spec)).filter(F.col("rn") <= 3)
 df.orderBy(F.col("score").desc()).limit(10)
 # If 10th and 11th have same score, one is randomly excluded
 
-# ✓ CORRECT: Use dense_rank or rank
+# ✅ CORRECT: Use dense_rank or rank
 window_spec = Window.orderBy(F.col("score").desc())
 df.withColumn("rank", F.dense_rank().over(window_spec)).filter(F.col("rank") <= 10)
 
 
-PROBLEM TYPE 2: Running/Cumulative Calculations
-Trigger Words:
-
-"running total", "cumulative sum", "rolling average", 
-"moving average", "YTD", "MTD", "progressive", "trailing"
-
-
-Key Pattern:
+2. Running/Cumulative Calculations
+Trigger Words
+	∙	“running total”, “cumulative sum”, “rolling average”
+	∙	“moving average”, “YTD”, “MTD”, “progressive”, “trailing”
+Key Pattern
 
 from pyspark.sql.window import Window
 from pyspark.sql.functions import sum, avg
@@ -139,7 +129,7 @@ window_spec = Window.partitionBy("group").orderBy("date").rowsBetween(
 df_running = df.withColumn("running_total", F.sum("amount").over(window_spec))
 
 
-Frame Specification Options:
+Frame Specification Options
 
 # Cumulative from start (running total)
 Window.rowsBetween(Window.unboundedPreceding, Window.currentRow)
@@ -154,7 +144,7 @@ Window.rowsBetween(-3, 3)
 Window.partitionBy("category")  # No orderBy = all rows
 
 
-Examples:
+Examples
 
 # Example 1: Running total by month
 window_spec = Window.partitionBy("product_id").orderBy("date").rowsBetween(
@@ -177,7 +167,10 @@ df_moving_avg = df.withColumn(
 # Example 3: Running total with month reset
 from pyspark.sql.functions import year, month
 
-df_with_month = df.withColumn("year_month", F.concat(F.year("date"), F.lit("-"), F.month("date")))
+df_with_month = df.withColumn(
+    "year_month", 
+    F.concat(F.year("date"), F.lit("-"), F.month("date"))
+)
 
 window_spec = Window.partitionBy("product_id", "year_month").orderBy("date").rowsBetween(
     Window.unboundedPreceding, Window.currentRow
@@ -226,7 +219,7 @@ df_rolling = df.withColumn(
 )
 
 
-Quick Reference:
+Quick Reference
 
 
 
@@ -239,7 +232,7 @@ Quick Reference:
 |First in partition     |`first()`     |`rowsBetween(unboundedPreceding, unboundedFollowing)`|
 |Last in partition      |`last()`      |`rowsBetween(unboundedPreceding, unboundedFollowing)`|
 
-rowsBetween vs rangeBetween:
+rowsBetween vs rangeBetween
 
 # rowsBetween: Physical row positions
 Window.orderBy("date").rowsBetween(-6, 0)  # Last 7 rows
@@ -254,14 +247,11 @@ Window.orderBy(F.col("date").cast("long")).rangeBetween(
 # - rangeBetween: When you want time-based windows (e.g., "last 7 days")
 
 
-PROBLEM TYPE 3: Time-Series & Gap Analysis
-Trigger Words:
-
-"missing dates", "gaps", "fill missing", "consecutive days",
-"streak", "continuous", "interpolate", "date series"
-
-
-Key Pattern:
+3. Time-Series & Gap Analysis
+Trigger Words
+	∙	“missing dates”, “gaps”, “fill missing”, “consecutive days”
+	∙	“streak”, “continuous”, “interpolate”, “date series”
+Key Pattern
 
 from pyspark.sql.functions import expr, explode, sequence, to_date
 
@@ -278,7 +268,7 @@ date_range = spark.sql("""
 gaps = date_range.join(df, "date", "left_anti")
 
 
-Common Patterns:
+Common Patterns
 
 # Pattern 1: Generate complete date series
 from pyspark.sql.functions import explode, sequence, to_date, lit
@@ -325,7 +315,7 @@ islands_summary = (df_islands
 )
 
 
-Examples:
+Examples
 
 # Example 1: Find missing transaction IDs
 from pyspark.sql.functions import expr, col
@@ -342,7 +332,9 @@ login_streaks = (df
     .select("user_id", F.to_date("login_timestamp").alias("login_date"))
     .distinct()
     .withColumn("row_num", F.row_number().over(window_spec))
-    .withColumn("date_diff", F.datediff("login_date", F.expr("date_add(login_date, -row_num)")))
+    .withColumn("date_diff", 
+                F.datediff("login_date", 
+                          F.expr("date_add(login_date, -row_num)")))
     .groupBy("user_id", "date_diff")
     .agg(
         F.min("login_date").alias("streak_start"),
@@ -386,14 +378,11 @@ gaps = (df
 )
 
 
-PROBLEM TYPE 4: Aggregation Patterns
-Trigger Words:
-
-"total", "count", "average", "sum", "group by", 
-"per category", "aggregate", "summary", "breakdown"
-
-
-Key Patterns:
+4. Aggregation Patterns
+Trigger Words
+	∙	“total”, “count”, “average”, “sum”, “group by”
+	∙	“per category”, “aggregate”, “summary”, “breakdown”
+Key Patterns
 
 # Pattern 1: Simple aggregation
 df.groupBy("category").agg(
@@ -417,7 +406,7 @@ df.groupBy("region").agg(
 )
 
 
-Examples:
+Examples
 
 # Example 1: Group by with multiple columns
 sales_summary = df.groupBy("region", "product_category", "year").agg(
@@ -432,7 +421,8 @@ df.groupBy("department").agg(
     F.count("*").alias("total_employees"),
     F.sum(F.when(F.col("salary") > 100000, 1).otherwise(0)).alias("high_earners"),
     F.sum(F.when(F.col("tenure") > 5, 1).otherwise(0)).alias("veterans"),
-    F.avg(F.when(F.col("performance") == "Excellent", F.col("salary"))).alias("avg_salary_top_performers")
+    F.avg(F.when(F.col("performance") == "Excellent", 
+                 F.col("salary"))).alias("avg_salary_top_performers")
 )
 
 # Example 3: Collect list/set
@@ -465,11 +455,14 @@ df.groupBy("store_id").agg(
     F.sum("sales").alias("total_sales"),
     
     # Sales by payment type
-    F.sum(F.when(F.col("payment_type") == "cash", F.col("sales")).otherwise(0)).alias("cash_sales"),
-    F.sum(F.when(F.col("payment_type") == "card", F.col("sales")).otherwise(0)).alias("card_sales"),
+    F.sum(F.when(F.col("payment_type") == "cash", 
+                 F.col("sales")).otherwise(0)).alias("cash_sales"),
+    F.sum(F.when(F.col("payment_type") == "card", 
+                 F.col("sales")).otherwise(0)).alias("card_sales"),
     
     # Average by customer segment
-    F.avg(F.when(F.col("segment") == "premium", F.col("sales"))).alias("avg_premium_sale"),
+    F.avg(F.when(F.col("segment") == "premium", 
+                 F.col("sales"))).alias("avg_premium_sale"),
     
     # Count distinct
     F.countDistinct("customer_id").alias("unique_customers")
@@ -483,7 +476,7 @@ high_volume_products = (df
 )
 
 
-Advanced Aggregation Functions:
+Advanced Aggregation Functions
 
 # Statistical aggregations
 df.groupBy("category").agg(
@@ -501,14 +494,11 @@ df.groupBy("user_id").agg(
 )
 
 
-PROBLEM TYPE 5: Join Strategies & Optimization
-Trigger Words:
-
-"combine", "merge", "match", "lookup", "enrich",
-"left/right/inner/outer join", "anti-join", "semi-join"
-
-
-Join Types:
+5. Join Strategies & Optimization
+Trigger Words
+	∙	“combine”, “merge”, “match”, “lookup”, “enrich”
+	∙	“left/right/inner/outer join”, “anti-join”, “semi-join”
+Join Types
 
 # Inner Join (only matching records)
 df1.join(df2, "key", "inner")
@@ -532,7 +522,7 @@ df1.join(df2, "key", "left_anti")
 df1.crossJoin(df2)
 
 
-Join Optimization Patterns:
+Join Optimization Patterns
 
 # Pattern 1: Broadcast Join (for small tables)
 from pyspark.sql.functions import broadcast
@@ -557,12 +547,13 @@ df1.join(
 # Pattern 4: Self-join
 df.alias("a").join(
     df.alias("b"),
-    (F.col("a.id") != F.col("b.id")) & (F.col("a.category") == F.col("b.category")),
+    (F.col("a.id") != F.col("b.id")) & 
+    (F.col("a.category") == F.col("b.category")),
     "inner"
 )
 
 
-Examples:
+Examples
 
 # Example 1: Enrich orders with customer data
 orders_enriched = (orders
@@ -641,37 +632,22 @@ result = (orders
 )
 
 
-Join Performance Checklist:
-
-# ✓ DO: Use broadcast for small tables (< 10MB)
-df_large.join(broadcast(df_small), "key")
-
-# ✓ DO: Filter before joining
-df1.filter(F.col("active") == True).join(df2, "key")
-
-# ✓ DO: Select only needed columns before join
-df1.select("id", "name").join(df2.select("id", "value"), "id")
-
-# ❌ DON'T: Join without filtering large tables
-df1.join(df2, "key")  # If both are huge
-
-# ❌ DON'T: Use cross join accidentally
-df1.join(df2)  # Missing join condition!
-
-# ✓ DO: Use appropriate join type
-# Inner join when you only need matches
-# Left join when you need all from left
-# Left anti when checking for non-existence
+Join Performance Checklist
 
 
-PROBLEM TYPE 6: Data Quality & Validation
-Trigger Words:
 
-"validate", "check quality", "null values", "duplicates",
-"data profiling", "schema validation", "outliers"
+|Do                                       |Don’t                                            |
+|-----------------------------------------|-------------------------------------------------|
+|✅ Use broadcast for small tables (< 10MB)|❌ Join without filtering large tables            |
+|✅ Filter before joining                  |❌ Use cross join accidentally (missing condition)|
+|✅ Select only needed columns before join |❌ Keep all columns from both tables              |
+|✅ Use appropriate join type              |❌ Use outer join when inner join suffices        |
 
-
-Validation Patterns:
+6. Data Quality & Validation
+Trigger Words
+	∙	“validate”, “check quality”, “null values”, “duplicates”
+	∙	“data profiling”, “schema validation”, “outliers”
+Validation Patterns
 
 # Pattern 1: Null checks
 null_counts = df.select([
@@ -690,7 +666,7 @@ invalid_values = df.filter(
 )
 
 
-Comprehensive Examples:
+Comprehensive Examples
 
 # Example 1: Complete data quality report
 def data_quality_report(df):
@@ -725,8 +701,8 @@ from pyspark.sql.functions import expr
 
 outliers_df = df.select(
     "*",
-    expr("percentile_approx(price, 0.25)").over().alias("q1"),
-    expr("percentile_approx(price, 0.75)").over().alias("q3")
+    F.expr("percentile_approx(price, 0.25)").over().alias("q1"),
+    F.expr("percentile_approx(price, 0.75)").over().alias("q3")
 ).withColumn(
     "iqr",
     F.col("q3") - F.col("q1")
@@ -742,6 +718,8 @@ outliers_df = df.select(
 )
 
 # Example 3: Schema validation
+from pyspark.sql.types import StructType, StructField, IntegerType, StringType
+
 expected_schema = StructType([
     StructField("id", IntegerType(), False),
     StructField("name", StringType(), False),
@@ -771,7 +749,9 @@ def validate_schema(df, expected_schema):
             actual_type = dict(df.dtypes)[field.name]
             expected_type = str(field.dataType).lower()
             if actual_type != expected_type:
-                issues.append(f"Column {field.name}: expected {expected_type}, got {actual_type}")
+                issues.append(
+                    f"Column {field.name}: expected {expected_type}, got {actual_type}"
+                )
     
     return issues
 
@@ -812,7 +792,7 @@ invalid_combinations = df.filter(
 )
 
 
-Validation Framework Template:
+Validation Framework Template
 
 class DataValidator:
     def __init__(self, df):
@@ -826,7 +806,9 @@ class DataValidator:
             null_count = self.df.filter(F.col(col).isNull()).count()
             null_pct = null_count / total
             if null_pct > threshold:
-                self.errors.append(f"{col}: {null_pct*100:.2f}% nulls (threshold: {threshold*100}%)")
+                self.errors.append(
+                    f"{col}: {null_pct*100:.2f}% nulls (threshold: {threshold*100}%)"
+                )
     
     def check_duplicates(self, key_columns):
         """Check for duplicate keys"""
@@ -855,7 +837,9 @@ class DataValidator:
         """Check foreign key integrity"""
         orphaned = self.df.join(ref_df, key_column, "left_anti").count()
         if orphaned > 0:
-            self.errors.append(f"Found {orphaned} orphaned records (no matching {key_column})")
+            self.errors.append(
+                f"Found {orphaned} orphaned records (no matching {key_column})"
+            )
     
     def get_report(self):
         """Return validation report"""
@@ -873,14 +857,11 @@ validator.check_referential_integrity(customers_df, "customer_id")
 report = validator.get_report()
 
 
-PROBLEM TYPE 7: Column Transformations
-Trigger Words:
-
-"add column", "transform", "calculate", "derive",
-"convert", "parse", "extract", "split", "concat"
-
-
-Common Transformations:
+7. Column Transformations
+Trigger Words
+	∙	“add column”, “transform”, “calculate”, “derive”
+	∙	“convert”, “parse”, “extract”, “split”, “concat”
+Common Transformations
 
 # Pattern 1: Simple column operations
 df.withColumn("new_col", F.col("existing_col") * 2)
@@ -903,13 +884,14 @@ df.withColumn("year", F.year(F.col("date")))
   .withColumn("day_of_week", F.dayofweek(F.col("date")))
 
 
-Examples:
+Examples
 
 # Example 1: Complex conditional logic
 df_categorized = df.withColumn(
     "risk_category",
     F.when((F.col("age") < 25) & (F.col("income") < 30000), "High Risk")
-    .when((F.col("age") >= 25) & (F.col("age") < 40) & (F.col("credit_score") > 700), "Low Risk")
+    .when((F.col("age") >= 25) & (F.col("age") < 40) & 
+          (F.col("credit_score") > 700), "Low Risk")
     .when(F.col("credit_score") < 600, "High Risk")
     .otherwise("Medium Risk")
 )
@@ -1006,7 +988,7 @@ df_casted = df.withColumn(
 )
 
 
-String Function Quick Reference:
+String Function Quick Reference
 
 # Concatenation
 F.concat(F.col("first"), F.lit(" "), F.col("last"))
@@ -1041,14 +1023,11 @@ F.lpad(F.col("text"), 10, "0")  # Left pad to length 10 with '0'
 F.rpad(F.col("text"), 10, " ")  # Right pad
 
 
-PROBLEM TYPE 8: Complex Filtering & Conditions
-Trigger Words:
-
-"filter", "where", "exclude", "only", "remove",
-"condition", "criteria", "matching", "satisfying"
-
-
-Filtering Patterns:
+8. Complex Filtering & Conditions
+Trigger Words
+	∙	“filter”, “where”, “exclude”, “only”, “remove”
+	∙	“condition”, “criteria”, “matching”, “satisfying”
+Filtering Patterns
 
 # Pattern 1: Simple conditions
 df.filter(F.col("age") > 18)
@@ -1066,7 +1045,7 @@ df.filter(F.col("name").like("%smith%"))
 df.filter(F.col("email").rlike(r'^[a-z]+@example\.com$'))
 
 
-Examples:
+Examples
 
 # Example 1: Multiple AND conditions
 filtered = df.filter(
@@ -1151,13 +1130,6 @@ non_purchasers = customers.join(
     "left_anti"
 )
 
-# Or using NOT EXISTS pattern
-non_purchasers = customers.filter(
-    ~F.col("customer_id").isin(
-        orders.select("customer_id").distinct().rdd.flatMap(lambda x: x).collect()
-    )
-)
-
 # Example 9: Filtering with aggregates (requires subquery/window)
 # Orders above category average
 window_spec = Window.partitionBy("category")
@@ -1171,8 +1143,8 @@ above_avg_orders = (df
 df.filter(F.lower(F.col("status")) == "active")
 
 
-PROBLEM TYPE 9: Performance Optimization Patterns
-Key Optimization Strategies:
+9. Performance Optimization Patterns
+Key Optimization Strategies
 
 # 1. CACHING - For DataFrames used multiple times
 df.cache()  # or df.persist()
@@ -1196,7 +1168,7 @@ df.filter(F.col("date") >= "2024-01-01") \  # Filter first
 df.select("id", "name", "amount")  # Not df.select("*")
 
 
-Examples:
+Examples
 
 # Example 1: Optimize multiple aggregations
 # ❌ BAD: Multiple passes
@@ -1204,7 +1176,7 @@ count1 = df.filter(F.col("type") == "A").count()
 count2 = df.filter(F.col("type") == "B").count()
 count3 = df.filter(F.col("type") == "C").count()
 
-# ✓ GOOD: Single pass
+# ✅ GOOD: Single pass
 result = df.groupBy("type").count().collect()
 counts = {row['type']: row['count'] for row in result}
 
@@ -1213,7 +1185,7 @@ counts = {row['type']: row['count'] for row in result}
 df_cached = df.cache()
 df_filtered = df_cached.filter(F.col("active") == True)  # Only 1% of data
 
-# ✓ GOOD: Cache after filtering
+# ✅ GOOD: Cache after filtering
 df_filtered = df.filter(F.col("active") == True).cache()
 # Now df_filtered is smaller and cached
 
@@ -1221,19 +1193,20 @@ df_filtered = df.filter(F.col("active") == True).cache()
 # Small dimension table (1000 rows)
 # Large fact table (1B rows)
 
-# ✓ GOOD: Broadcast small table
+# ✅ GOOD: Broadcast small table
 result = large_fact.join(broadcast(small_dim), "id")
 
 # Example 4: Repartition for better parallelism
 # ❌ BAD: Too few partitions for large dataset
 df_few_partitions = df.coalesce(4)  # Only 4 tasks for 1TB data!
 
-# ✓ GOOD: More partitions for large data
+# ✅ GOOD: More partitions for large data
 df_optimized = df.repartition(200)  # 200 parallel tasks
 
 # Example 5: Avoid UDFs when possible
 # ❌ SLOW: Python UDF
 from pyspark.sql.types import StringType
+
 def categorize_udf(value):
     if value > 100: return "High"
     elif value > 50: return "Medium"
@@ -1242,7 +1215,7 @@ def categorize_udf(value):
 categorize = F.udf(categorize_udf, StringType())
 df.withColumn("category", categorize(F.col("value")))
 
-# ✓ FAST: Built-in functions
+# ✅ FAST: Built-in functions
 df.withColumn(
     "category",
     F.when(F.col("value") > 100, "High")
@@ -1254,7 +1227,7 @@ df.withColumn(
 # ❌ BAD: Scans all partitions
 df_partitioned.filter(F.col("amount") > 100)
 
-# ✓ GOOD: Filter on partition column first
+# ✅ GOOD: Filter on partition column first
 df_partitioned.filter(
     (F.col("date") == "2024-01-01") &  # Partition column
     (F.col("amount") > 100)
@@ -1264,7 +1237,7 @@ df_partitioned.filter(
 # ❌ BAD: Brings all data to driver
 all_data = df.collect()  # OOM if df is large!
 
-# ✓ GOOD: Aggregate first or use iterators
+# ✅ GOOD: Aggregate first or use iterators
 summary = df.agg(F.sum("amount")).collect()  # Small result
 # Or
 for row in df.toLocalIterator():  # Process one partition at a time
@@ -1274,41 +1247,35 @@ for row in df.toLocalIterator():  # Process one partition at a time
 # ❌ SLOW: Exact count distinct
 exact_count = df.select(F.countDistinct("user_id")).collect()
 
-# ✓ FAST: Approximate count distinct (faster, 95% accurate)
+# ✅ FAST: Approximate count distinct (faster, 95% accurate)
 approx_count = df.select(F.approx_count_distinct("user_id", rsd=0.05)).collect()
 
 
-Performance Checklist:
+Performance Checklist
+✅ DO:
+	1.	Cache only filtered/processed data
+	2.	Broadcast small tables in joins
+	3.	Filter before joins and aggregations
+	4.	Select only needed columns
+	5.	Use built-in functions over UDFs
+	6.	Partition data appropriately (100-1000 partitions)
+	7.	Use approx functions for aggregations
+	8.	Persist intermediate results used multiple times
+❌ DON’T:
+	1.	Cache entire large datasets unnecessarily
+	2.	Use collect() on large DataFrames
+	3.	Create too many or too few partitions
+	4.	Use Python UDFs when SQL functions work
+	5.	Join without considering table sizes
+	6.	Process data row-by-row (use batch operations)
+	7.	Ignore data skew
+	8.	Chain many operations without caching intermediate results
 
-# ✓ DO:
-1. Cache only filtered/processed data
-2. Broadcast small tables in joins
-3. Filter before joins and aggregations
-4. Select only needed columns
-5. Use built-in functions over UDFs
-6. Partition data appropriately (100-1000 partitions)
-7. Use approx functions for aggregations
-8. Persist intermediate results used multiple times
-
-# ❌ DON'T:
-1. Cache entire large datasets unnecessarily
-2. Use collect() on large DataFrames
-3. Create too many or too few partitions
-4. Use Python UDFs when SQL functions work
-5. Join without considering table sizes
-6. Process data row-by-row (use batch operations)
-7. Ignore data skew
-8. Chain many operations without caching intermediate results
-
-
-PROBLEM TYPE 10: Deduplication Strategies
-Trigger Words:
-
-"remove duplicates", "unique", "distinct", "deduplicate",
-"keep first/last", "primary key", "eliminate duplicates"
-
-
-Deduplication Patterns:
+10. Deduplication Strategies
+Trigger Words
+	∙	“remove duplicates”, “unique”, “distinct”, “deduplicate”
+	∙	“keep first/last”, “primary key”, “eliminate duplicates”
+Deduplication Patterns
 
 # Pattern 1: Simple distinct
 df.distinct()
@@ -1323,7 +1290,7 @@ df.withColumn("rn", F.row_number().over(window_spec)) \
   .drop("rn")
 
 
-Examples:
+Examples
 
 # Example 1: Remove complete duplicates
 df_unique = df.distinct()
@@ -1403,14 +1370,11 @@ df_similarity = df.alias("a").join(
 )
 
 
-PROBLEM TYPE 11: Pivoting & Reshaping
-Trigger Words:
-
-"pivot", "unpivot", "wide to long", "long to wide",
-"transpose", "crosstab", "reshape"
-
-
-Pivot Patterns:
+11. Pivoting & Reshaping
+Trigger Words
+	∙	“pivot”, “unpivot”, “wide to long”, “long to wide”
+	∙	“transpose”, “crosstab”, “reshape”
+Pivot Patterns
 
 # Pattern 1: Pivot (long to wide)
 df.groupBy("row_id").pivot("category").agg(F.sum("value"))
@@ -1422,7 +1386,7 @@ df.selectExpr(
 )
 
 
-Examples:
+Examples
 
 # Example 1: Pivot sales by month
 # Input: product, month, sales
@@ -1480,14 +1444,16 @@ df_pivoted = (df
     .groupBy("product")
     .pivot("region")
     .agg(
-        F.sum(F.when(F.col("status") == "completed", F.col("amount")).otherwise(0)).alias("completed_sales"),
-        F.sum(F.when(F.col("status") == "pending", F.col("amount")).otherwise(0)).alias("pending_sales")
+        F.sum(F.when(F.col("status") == "completed", 
+                     F.col("amount")).otherwise(0)).alias("completed_sales"),
+        F.sum(F.when(F.col("status") == "pending", 
+                     F.col("amount")).otherwise(0)).alias("pending_sales")
     )
 )
 
 
-PROBLEM TYPE 12: Advanced Patterns (UDFs, Broadcast, Caching)
-UDF Patterns:
+12. Advanced Patterns (UDFs, Broadcast, Caching)
+UDF Patterns
 
 # Pattern 1: Simple UDF
 from pyspark.sql.types import StringType
@@ -1512,7 +1478,7 @@ def categorize_pandas(amounts: pd.Series) -> pd.Series:
 df.withColumn("category", categorize_pandas(F.col("amount")))
 
 
-Examples:
+Examples
 
 # Example 1: Python UDF for complex logic
 from pyspark.sql.types import FloatType
@@ -1600,7 +1566,7 @@ df.withColumn("checked", count_nulls_udf(F.col("name"))).count()
 print(f"Null values found: {null_counter.value}")
 
 
-QUICK REFERENCE CARD: PYSPARK PATTERNS
+Quick Reference Card
 
 ╔══════════════════════════════════════════════════════════════╗
 ║           PYSPARK PROBLEM TYPES QUICK REFERENCE              ║
@@ -1629,7 +1595,7 @@ QUICK REFERENCE CARD: PYSPARK PATTERNS
 ╚══════════════════════════════════════════════════════════════╝
 
 
-PYSPARK vs SQL TRANSLATION GUIDE
+PySpark vs SQL Translation Guide
 
 
 
@@ -1661,25 +1627,24 @@ PYSPARK vs SQL TRANSLATION GUIDE
 |`LEFT JOIN`               |`df1.join(df2, "key", "left")`                  |
 |`UNION ALL`               |`df1.union(df2)`                                |
 
-COMMON PITFALLS & SOLUTIONS
-
-┌────────────────────────────────────────────────────────────┐
-│ PITFALL                          │ SOLUTION                │
-├────────────────────────────────────────────────────────────┤
-│ Using Python UDF unnecessarily   │ Use built-in functions  │
-│ Caching before filtering         │ Filter first, then cache│
-│ Not unpersisting cached data     │ Always unpersist()      │
-│ Too many/too few partitions      │ Aim for 100-1000        │
-│ Collect() on large DataFrame     │ Aggregate first         │
-│ Not broadcasting small tables    │ Use broadcast() hint    │
-│ Creating too many columns        │ Drop intermediate cols  │
-│ Ignoring data skew               │ Salt keys, repartition  │
-│ Column name ambiguity in joins   │ Use df.alias("a")       │
-│ Type mismatch in operations      │ Explicit cast()         │
-└────────────────────────────────────────────────────────────┘
+Common Pitfalls & Solutions
 
 
-INTERVIEW PATTERN RECOGNITION
+
+|Pitfall                       |Solution                        |
+|------------------------------|--------------------------------|
+|Using Python UDF unnecessarily|Use built-in functions          |
+|Caching before filtering      |Filter first, then cache        |
+|Not unpersisting cached data  |Always unpersist()              |
+|Too many/too few partitions   |Aim for [100-1000](tel:100-1000)|
+|Collect() on large DataFrame  |Aggregate first                 |
+|Not broadcasting small tables |Use broadcast() hint            |
+|Creating too many columns     |Drop intermediate cols          |
+|Ignoring data skew            |Salt keys, repartition          |
+|Column name ambiguity in joins|Use df.alias(“a”)               |
+|Type mismatch in operations   |Explicit cast()                 |
+
+Interview Pattern Recognition
 
 
 
@@ -1696,7 +1661,7 @@ INTERVIEW PATTERN RECOGNITION
 |“pivot table”        |`groupBy().pivot().agg()`                                |
 |“unique values”      |`distinct()` or `dropDuplicates()`                       |
 
-Print this cheat sheet for quick reference during PySpark interviews! 🎯
+Happy Sparking! 🎯
 Would you like me to:
 	1.	Create end-to-end PySpark examples for complete workflows?
 	2.	Build a comparison guide (PySpark vs Pandas vs SQL)?

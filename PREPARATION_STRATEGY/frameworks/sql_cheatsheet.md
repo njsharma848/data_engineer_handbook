@@ -7,15 +7,15 @@ Excellent! Let me create a **comprehensive SQL problem types cheat sheet** that 
 ## **TABLE OF CONTENTS**
 
 ```
-1. Ranking & Top-N Problems
-2. Running/Cumulative Calculations  
-3. Time-Series & Gap Analysis
-4. Hierarchical/Tree Structures
-5. Self-Referencing Problems
-6. Comparison Problems (vs Average/Previous)
-7. Pivot & Unpivot
-8. Pattern Matching & Sequences
-9. Graph/Network Problems
+01. Ranking & Top-N Problems
+02. Running/Cumulative Calculations  
+03. Time-Series & Gap Analysis
+04. Hierarchical/Tree Structures
+05. Self-Referencing Problems
+06. Comparison Problems (vs Average/Previous)
+07. Pivot & Unpivot
+08. Pattern Matching & Sequences
+09. Graph/Network Problems
 10. Deduplication & Data Quality
 11. Statistical Aggregations
 12. Complex Filtering

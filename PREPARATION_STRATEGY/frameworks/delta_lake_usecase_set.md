@@ -15,6 +15,19 @@ Excellent! Let me give you a **comprehensive deep dive into Delta Lake patterns*
 8. Streaming with Delta Lake
 9. Common Interview Problems
 10. Production Best Practices
+11. Delta Lake vs Apache Iceberg vs Apache Hudi
+12. Transaction Log Internals
+13. Liquid Clustering (Delta Lake 3.0+)
+14. Deletion Vectors
+15. UniForm (Universal Format)
+16. Clone Operations (SHALLOW / DEEP)
+17. CHECK Constraints
+18. Generated Columns & Identity Columns
+19. Bloom Filter Index
+20. Multi-Cluster Writes (S3/ADLS)
+21. Column Mapping
+22. Idempotent Writes (txnAppId / txnVersion)
+23. Copy-on-Write vs Merge-on-Read
 
 ---
 
@@ -1668,49 +1681,1571 @@ audit_write(updates_df, "/delta/customers", user_id="john.doe", operation="UPDAT
 
 ---
 
+## **PART 11: Delta Lake vs Apache Iceberg vs Apache Hudi**
+
+### **Head-to-Head Comparison**
+
+```
+┌─────────────────────────┬─────────────────────┬──────────────────────┬──────────────────────┐
+│ Feature                 │ Delta Lake          │ Apache Iceberg       │ Apache Hudi          │
+├─────────────────────────┼─────────────────────┼──────────────────────┼──────────────────────┤
+│ Origin                  │ Databricks (2019)   │ Netflix (2017)       │ Uber (2016)          │
+│ License                 │ Apache 2.0          │ Apache 2.0           │ Apache 2.0           │
+│ Transaction Log         │ JSON + Parquet      │ Manifest files       │ Timeline metadata    │
+│                         │ (_delta_log/)        │ (metadata/)          │ (.hoodie/)           │
+├─────────────────────────┼─────────────────────┼──────────────────────┼──────────────────────┤
+│ ACID Transactions       │ ✅ Yes              │ ✅ Yes               │ ✅ Yes               │
+│ Time Travel             │ ✅ Yes              │ ✅ Yes (snapshots)   │ ✅ Yes (instants)    │
+│ Schema Evolution        │ ✅ Yes              │ ✅ Yes (full)        │ ✅ Yes               │
+│ Partition Evolution     │ ⚠️ Via Liquid Clust │ ✅ Hidden partitions │ ❌ Limited           │
+│ Updates/Deletes         │ ✅ CoW              │ ✅ CoW + MoR         │ ✅ CoW + MoR         │
+│ Streaming               │ ✅ Native           │ ⚠️ Limited           │ ✅ Native            │
+├─────────────────────────┼─────────────────────┼──────────────────────┼──────────────────────┤
+│ File Format             │ Parquet only        │ Parquet, ORC, Avro   │ Parquet, ORC         │
+│ Catalog                 │ Unity Catalog       │ Hive, Nessie, REST   │ Hive Metastore       │
+│ Engine Lock-in          │ Spark-first         │ Engine-agnostic      │ Spark-first          │
+│                         │ (UniForm opens up)  │ (Trino, Flink, etc.) │                      │
+├─────────────────────────┼─────────────────────┼──────────────────────┼──────────────────────┤
+│ Small File Compaction   │ OPTIMIZE            │ Rewrite manifests    │ Compaction (inline)  │
+│ Data Skipping           │ Z-ORDER, Liquid     │ Hidden partitioning  │ Record-level index   │
+│ Clustering              │                     │ + sort orders        │                      │
+│ Merge Performance       │ Good                │ Good                 │ Excellent (indexes)  │
+│ Upsert Specialty        │ General-purpose     │ General-purpose      │ Built for upserts    │
+├─────────────────────────┼─────────────────────┼──────────────────────┼──────────────────────┤
+│ Best For                │ Databricks shops,   │ Multi-engine envs,   │ High-frequency       │
+│                         │ Spark-centric,      │ engine-agnostic,     │ upserts, CDC-heavy,  │
+│                         │ lakehouse arch      │ vendor-neutral       │ near-real-time       │
+└─────────────────────────┴─────────────────────┴──────────────────────┴──────────────────────┘
+```
+
+### **Transaction Log Architecture Comparison**
+
+```
+Delta Lake:                    Iceberg:                       Hudi:
+_delta_log/                    metadata/                      .hoodie/
+├── 00000.json (add/remove)    ├── v1.metadata.json           ├── 20240208.commit (instant)
+├── 00001.json                 ├── snap-123.avro (snapshot)    ├── 20240209.commit
+├── 00002.json                 ├── m-456.avro (manifest list) │
+├── ...                        ├── M-789.avro (manifest file) │
+├── 00010.checkpoint.parquet   │                               │
+│   (every 10 versions)        │                               │
+│                              │                               │
+│ Optimistic Concurrency:      │ Optimistic Concurrency:       │ Timeline-based:
+│ File-level conflict detect   │ Snapshot isolation             │ MVCC with timeline
+│ JSON atomic rename           │ Atomic pointer swap            │ Marker-based commits
+│ Retry on conflict            │ Retry on conflict              │ Lock-based for COW
+
+KEY DIFFERENCES:
+  Delta:   Linear log → checkpoint every 10 → fast replay
+  Iceberg: Tree structure → snapshot → manifest list → manifest → data files
+  Hudi:    Timeline of instants → actions (commits, compactions, cleans)
+```
+
+### **When to Choose Each Format**
+
+```python
+"""
+DECISION FRAMEWORK:
+
+Choose DELTA LAKE when:
+  ✅ Using Databricks as primary platform
+  ✅ Spark-centric architecture
+  ✅ Need tight Unity Catalog integration
+  ✅ Want simplest setup (format + catalog in one)
+  ✅ Streaming-first workloads with Structured Streaming
+  ✅ Need Liquid Clustering for auto-optimization
+
+Choose ICEBERG when:
+  ✅ Multi-engine requirement (Spark + Trino + Flink + Dremio)
+  ✅ Vendor-neutral / avoid Databricks lock-in
+  ✅ Hidden partitioning is critical (users shouldn't know partition scheme)
+  ✅ Need Partition Evolution (change partitioning without rewriting data)
+  ✅ Large-scale metadata (millions of files) — tree-based catalog scales better
+  ✅ AWS-centric (Athena, EMR, Glue have native Iceberg support)
+
+Choose HUDI when:
+  ✅ High-frequency upserts / CDC-heavy workloads
+  ✅ Near-real-time ingestion (record-level indexing)
+  ✅ Need Merge-on-Read for write-heavy workloads
+  ✅ Uber/Lyft-style event processing pipelines
+  ✅ Want built-in incremental processing (incremental queries)
+
+INTERVIEW TIP:
+  "All three provide ACID on data lakes. Delta is Databricks-native and
+   simplest to adopt. Iceberg is engine-agnostic and excels at multi-engine
+   queries. Hudi is optimized for high-frequency upserts and CDC."
+"""
+```
+
+---
+
+## **PART 12: Transaction Log Internals**
+
+### **Delta Log File Structure**
+
+```python
+"""
+Every Delta operation creates a JSON commit file in _delta_log/
+
+ANATOMY OF A COMMIT FILE (e.g., 00005.json):
+
+{
+  "commitInfo": {
+    "timestamp": 1707400000000,
+    "operation": "MERGE",
+    "operationParameters": {"predicate": "target.id = source.id"},
+    "operationMetrics": {
+      "numTargetRowsInserted": "1000",
+      "numTargetRowsUpdated": "500",
+      "numTargetRowsDeleted": "50",
+      "numOutputRows": "10500"
+    },
+    "engineInfo": "Apache-Spark/3.5.0 Delta-Lake/3.0.0"
+  }
+}
+{
+  "add": {
+    "path": "part-00000-abc123.snappy.parquet",
+    "size": 134217728,
+    "partitionValues": {"year": "2024", "month": "02"},
+    "modificationTime": 1707400000000,
+    "dataChange": true,
+    "stats": "{\"numRecords\":50000,\"minValues\":{\"id\":1},\"maxValues\":{\"id\":50000}}"
+  }
+}
+{
+  "remove": {
+    "path": "part-00000-old456.snappy.parquet",
+    "deletionTimestamp": 1707400000000,
+    "dataChange": true
+  }
+}
+
+ACTIONS IN A COMMIT FILE:
+  commitInfo  → Metadata about the operation
+  add         → New Parquet file added to the table
+  remove      → Old Parquet file marked for removal (not physically deleted)
+  metaData    → Schema changes, partition changes, table properties
+  protocol    → Reader/writer version requirements
+  txn         → Application-level transaction ID (for idempotency)
+"""
+
+# ✅ PATTERN: Inspect raw transaction log
+import json
+
+# Read a specific commit file
+log_path = "/delta/table/_delta_log/00005.json"
+log_content = spark.sparkContext.textFile(log_path).collect()
+
+for line in log_content:
+    action = json.loads(line)
+    print(json.dumps(action, indent=2))
+```
+
+### **Checkpoint Files**
+
+```python
+"""
+CHECKPOINT MECHANISM:
+
+Problem: Reading 10,000 JSON files to reconstruct table state is slow.
+Solution: Checkpoint files consolidate state every N versions.
+
+_delta_log/
+├── 00000.json
+├── 00001.json
+├── ...
+├── 00009.json
+├── 00010.checkpoint.parquet    ← Snapshot of table state at version 10
+├── 00010.json
+├── 00011.json
+├── ...
+├── 00019.json
+├── 00020.checkpoint.parquet    ← Snapshot at version 20
+├── _last_checkpoint            ← Points to latest checkpoint
+
+HOW IT WORKS:
+  1. Every 10 commits (configurable), Delta writes a checkpoint
+  2. Checkpoint = single Parquet file with ALL active add/remove actions
+  3. To read table at version 25:
+     - Read checkpoint at version 20 (one file)
+     - Replay JSON logs 21-25 (five files)
+     - Total: 6 files instead of 26
+
+CONFIGURE CHECKPOINT INTERVAL:
+  spark.conf.set("spark.databricks.delta.checkpointInterval", "10")  # default
+"""
+
+# ✅ PATTERN: Read _last_checkpoint
+last_checkpoint = spark.read.json("/delta/table/_delta_log/_last_checkpoint")
+last_checkpoint.show()
+# version | size | parts
+# 1000    | 5000 | null
+
+# ✅ PATTERN: Force checkpoint
+from delta.tables import DeltaTable
+delta_table = DeltaTable.forPath(spark, "/delta/table")
+
+# Checkpoint is automatic, but you can trigger via a dummy operation
+# or use internal API (Databricks):
+# delta_table._jdt.checkpoint()
+```
+
+### **Protocol Versioning**
+
+```python
+"""
+READER/WRITER PROTOCOL:
+
+The protocol action controls which features are enabled and
+which minimum reader/writer versions are required.
+
+┌─────────────────────┬──────────────────┬──────────────────┐
+│ Feature             │ Min Reader Ver.  │ Min Writer Ver.  │
+├─────────────────────┼──────────────────┼──────────────────┤
+│ Basic Delta Lake    │ 1                │ 1                │
+│ Column mapping      │ 2                │ 5                │
+│ Change Data Feed    │ 1                │ 4                │
+│ Generated columns   │ 1                │ 4                │
+│ CHECK constraints   │ 1                │ 3                │
+│ Identity columns    │ 1                │ 6                │
+│ Deletion vectors    │ 3                │ 7                │
+│ Liquid clustering   │ 3                │ 7                │
+│ Row tracking        │ 3                │ 7                │
+│ V2 checkpoints      │ 3                │ 7                │
+└─────────────────────┴──────────────────┴──────────────────┘
+
+IMPORTANT:
+  - Upgrading protocol is IRREVERSIBLE
+  - Once you enable writer version 7, older clients cannot write
+  - Plan upgrades carefully in shared environments
+"""
+
+# ✅ PATTERN: Check current protocol
+spark.sql("DESCRIBE DETAIL delta.`/delta/table`").select(
+    "minReaderVersion", "minWriterVersion"
+).show()
+
+# ✅ PATTERN: Upgrade protocol
+spark.sql("""
+    ALTER TABLE delta.`/delta/table`
+    SET TBLPROPERTIES (
+        'delta.minReaderVersion' = '3',
+        'delta.minWriterVersion' = '7'
+    )
+""")
+```
+
+### **Conflict Resolution Deep Dive**
+
+```python
+"""
+OPTIMISTIC CONCURRENCY CONTROL (OCC):
+
+Delta uses file-level conflict detection:
+
+Writer A: Reads version 5, modifies files F1, F2
+Writer B: Reads version 5, modifies files F3, F4
+
+SCENARIO 1 — No conflict (different files):
+  Writer A commits version 6 (touches F1, F2) ✅
+  Writer B tries version 6, sees conflict, rebases to version 7
+  Writer B checks: Do my changes conflict with version 6?
+  F3, F4 don't overlap with F1, F2 → Auto-retry succeeds ✅
+
+SCENARIO 2 — Conflict (same files):
+  Writer A commits version 6 (touches F1, F2) ✅
+  Writer B tries version 6, sees conflict, rebases
+  Writer B also touches F1 → CONFLICT ❌
+  Throws ConcurrentModificationException
+
+CONFLICT RULES:
+  ┌──────────────┬────────────┬────────────┬──────────┐
+  │              │ APPEND     │ UPDATE     │ DELETE   │
+  ├──────────────┼────────────┼────────────┼──────────┤
+  │ APPEND       │ ✅ No conf │ ✅ No conf │ ✅ No    │
+  │ UPDATE       │ ✅ No conf │ ❌ If same │ ❌ If    │
+  │              │            │    files   │   same   │
+  │ DELETE       │ ✅ No conf │ ❌ If same │ ❌ If    │
+  │              │            │    files   │   same   │
+  │ OPTIMIZE     │ ✅ No conf │ ❌ Always  │ ❌ Alw.  │
+  └──────────────┴────────────┴────────────┴──────────┘
+
+  Key insight: APPEND never conflicts with anything.
+  This is why streaming appends + batch updates can coexist.
+"""
+```
+
+---
+
+## **PART 13: Liquid Clustering (Delta Lake 3.0+)**
+
+### **Why Liquid Clustering Replaces Partitioning + Z-ORDER**
+
+```
+PROBLEM with traditional approach:
+
+  Partitioning:
+  ❌ Must choose partition columns upfront (irreversible)
+  ❌ Over-partitioning → small files problem
+  ❌ Under-partitioning → full table scans
+  ❌ Changing partition scheme requires full rewrite
+
+  Z-ORDER:
+  ❌ Must run OPTIMIZE manually or on schedule
+  ❌ Only works within partitions
+  ❌ Effectiveness degrades as data is appended
+
+SOLUTION — Liquid Clustering:
+  ✅ Cluster by any column(s) — changeable at any time
+  ✅ No partitioning needed (no small files problem)
+  ✅ Incremental clustering (only new/modified data)
+  ✅ Engine-optimized (Databricks Photon auto-clusters)
+  ✅ Replaces PARTITIONED BY + ZORDER BY in one feature
+```
+
+### **Using Liquid Clustering**
+
+```python
+# ✅ PATTERN 1: Create table with Liquid Clustering
+spark.sql("""
+    CREATE TABLE events (
+        event_id STRING,
+        user_id STRING,
+        event_type STRING,
+        event_date DATE,
+        properties MAP<STRING, STRING>
+    )
+    USING DELTA
+    CLUSTER BY (user_id, event_date)
+""")
+
+# ✅ PATTERN 2: Enable on existing table
+spark.sql("""
+    ALTER TABLE events
+    CLUSTER BY (user_id, event_date)
+""")
+
+# ✅ PATTERN 3: Change clustering columns (no data rewrite!)
+# If query patterns change from user_id lookups to event_type lookups:
+spark.sql("""
+    ALTER TABLE events
+    CLUSTER BY (event_type, event_date)
+""")
+# Only NEW data is clustered by the new columns
+# Old data is incrementally re-clustered during OPTIMIZE
+
+# ✅ PATTERN 4: Remove clustering
+spark.sql("""
+    ALTER TABLE events
+    CLUSTER BY NONE
+""")
+
+# ✅ PATTERN 5: Trigger clustering (OPTIMIZE still works)
+spark.sql("OPTIMIZE events")
+# With Liquid Clustering enabled, OPTIMIZE clusters instead of just compacting
+# No need for ZORDER BY — clustering is automatic
+
+# ✅ PATTERN 6: Write data (clustering happens automatically on Databricks)
+new_events.write \
+    .format("delta") \
+    .mode("append") \
+    .saveAsTable("events")
+# Photon engine auto-clusters during write if optimizeWrite is enabled
+```
+
+### **Liquid Clustering vs Partitioning vs Z-ORDER**
+
+```
+┌────────────────────┬──────────────────┬──────────────┬────────────────────┐
+│ Aspect             │ Partitioning     │ Z-ORDER      │ Liquid Clustering  │
+├────────────────────┼──────────────────┼──────────────┼────────────────────┤
+│ Column selection   │ At table creation│ At OPTIMIZE  │ Any time (ALTER)   │
+│ Can change later?  │ ❌ No (rewrite)  │ ✅ Yes       │ ✅ Yes (instant)   │
+│ Small files risk   │ ❌ High          │ N/A          │ ✅ None            │
+│ Maintenance        │ None             │ Manual/sched │ Automatic          │
+│ Data skipping      │ Partition pruning│ File-level   │ File-level         │
+│ Incremental?       │ N/A              │ ❌ Full redo │ ✅ Incremental     │
+│ Max cluster cols   │ 2-3 practical    │ ~4 practical │ Up to 4            │
+│ Works with stream? │ ✅ Yes           │ ❌ Post-hoc  │ ✅ Yes (inline)    │
+│ Requires protocol  │ Writer v1        │ Writer v1    │ Reader 3/Writer 7  │
+└────────────────────┴──────────────────┴──────────────┴────────────────────┘
+
+INTERVIEW ANSWER:
+  "Liquid Clustering is the modern replacement for PARTITIONED BY + ZORDER BY.
+   It allows changing clustering columns without rewriting data, avoids small
+   files, and clusters incrementally. On Databricks, it's the recommended
+   approach for all new tables."
+```
+
+---
+
+## **PART 14: Deletion Vectors**
+
+### **How Deletion Vectors Avoid Full File Rewrites**
+
+```
+PROBLEM — Traditional DELETE/UPDATE:
+
+  Traditional (Copy-on-Write):
+  1. Read entire Parquet file (e.g., 128 MB, 1M rows)
+  2. Filter out 5 deleted rows
+  3. Write NEW Parquet file with 999,995 rows
+  4. Mark old file as removed in log
+  → Write amplification: rewrote 128 MB to delete 5 rows!
+
+  With Deletion Vectors:
+  1. Create a small deletion vector bitmap (few KB)
+  2. Store which row positions are deleted: {row 42, row 1089, row 50001, ...}
+  3. Attach DV to the original file in the transaction log
+  4. Original file is NOT rewritten
+  → Write: only a few KB bitmap instead of 128 MB!
+
+  READS with DVs:
+  1. Read Parquet file normally
+  2. Check deletion vector
+  3. Skip rows marked as deleted
+  → Slight read overhead, massive write savings
+
+┌──────────────────────────────────────────────────────────────────┐
+│ WITHOUT Deletion Vectors:                                        │
+│                                                                  │
+│ DELETE 5 rows from file with 1M rows:                            │
+│   Read 128 MB → Remove 5 rows → Write 128 MB → Log remove+add  │
+│   Cost: 256 MB I/O                                               │
+│                                                                  │
+│ WITH Deletion Vectors:                                            │
+│                                                                  │
+│ DELETE 5 rows from file with 1M rows:                            │
+│   Write 1 KB bitmap → Log DV attachment                          │
+│   Cost: 1 KB I/O                                                 │
+│   (Original file untouched!)                                     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### **Using Deletion Vectors**
+
+```python
+# ✅ PATTERN 1: Enable deletion vectors
+spark.sql("""
+    ALTER TABLE events
+    SET TBLPROPERTIES (
+        'delta.enableDeletionVectors' = 'true'
+    )
+""")
+# Requires: minReaderVersion=3, minWriterVersion=7
+
+# ✅ PATTERN 2: Delete with DVs (automatic — no code change)
+# Same syntax, but now uses DVs internally
+spark.sql("DELETE FROM events WHERE user_id = 'user_123'")
+# Instead of rewriting files, creates deletion vector bitmaps
+
+# ✅ PATTERN 3: Update with DVs (automatic)
+spark.sql("""
+    UPDATE events
+    SET event_type = 'converted'
+    WHERE event_id = 'evt_456'
+""")
+# Old row marked in DV, new row written to new small file
+
+# ✅ PATTERN 4: MERGE with DVs (automatic)
+# Matched updates use DVs to mark old rows
+delta_table.alias("t").merge(
+    source.alias("s"), "t.id = s.id"
+).whenMatchedUpdateAll() \
+ .whenNotMatchedInsertAll() \
+ .execute()
+
+# ✅ PATTERN 5: Compact DVs (materialize deletions)
+# Over time, DVs accumulate → run OPTIMIZE to physically remove deleted rows
+spark.sql("OPTIMIZE events")
+# OPTIMIZE rewrites files with accumulated DVs, resetting them
+
+# ✅ PATTERN 6: Check DV status
+spark.sql("DESCRIBE DETAIL events").select(
+    "numFiles", "sizeInBytes"
+).show()
+
+# View files with DVs via table history
+delta_table.history().select(
+    "version", "operation", "operationMetrics"
+).show(truncate=False)
+```
+
+### **Deletion Vectors Performance Impact**
+
+```
+┌──────────────────┬──────────────────────────┬────────────────────────┐
+│ Operation        │ Without DVs (CoW)        │ With DVs               │
+├──────────────────┼──────────────────────────┼────────────────────────┤
+│ DELETE 100 rows  │ Rewrite all touched files│ Write 100-byte bitmap  │
+│ from 10 GB table │ (potentially 10 GB I/O)  │ (<1 KB I/O)            │
+│                  │ Time: minutes            │ Time: milliseconds     │
+├──────────────────┼──────────────────────────┼────────────────────────┤
+│ UPDATE 1K rows   │ Rewrite files + new file │ DV + small new file    │
+│                  │ (GB-scale I/O)           │ (MB-scale I/O)         │
+├──────────────────┼──────────────────────────┼────────────────────────┤
+│ MERGE (1% match) │ Rewrite ~all target files│ DV for matched rows    │
+│                  │ (full table rewrite)     │ + append new rows      │
+├──────────────────┼──────────────────────────┼────────────────────────┤
+│ READ (scan)      │ Normal speed             │ ~5% overhead (DV check)│
+│ OPTIMIZE         │ Normal compaction        │ Also materializes DVs  │
+└──────────────────┴──────────────────────────┴────────────────────────┘
+
+BEST PRACTICE:
+  - Enable DVs for tables with frequent DELETE/UPDATE/MERGE
+  - Run OPTIMIZE periodically to compact DVs
+  - Monitor DV accumulation — too many DVs slow reads
+```
+
+---
+
+## **PART 15: UniForm (Universal Format)**
+
+### **What UniForm Does**
+
+```
+PROBLEM:
+  Team A uses Delta Lake (Databricks)
+  Team B uses Iceberg (Trino/Athena)
+  Team C uses Hudi (EMR)
+  → Same data must be readable by all three formats!
+
+TRADITIONAL SOLUTION:
+  Maintain 3 copies of data → expensive, inconsistent
+
+UNIFORM SOLUTION:
+  Write once as Delta → UniForm auto-generates Iceberg + Hudi metadata
+  All three engines read the SAME Parquet files with their native metadata
+
+┌───────────────────────────────────────────────────────────┐
+│                     SAME Parquet Files                     │
+│                                                           │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────┐  │
+│  │ _delta_log/  │  │ metadata/    │  │ .hoodie/        │  │
+│  │ (Delta meta) │  │ (Iceberg     │  │ (Hudi metadata) │  │
+│  │              │  │  metadata)   │  │                 │  │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬──────────┘  │
+│         │                 │                  │             │
+│    Databricks        Trino/Athena       EMR/Hudi          │
+│    Spark SQL         Presto             Spark             │
+└───────────────────────────────────────────────────────────┘
+
+UniForm automatically keeps all metadata layers in sync
+when writing via Delta Lake.
+```
+
+### **Using UniForm**
+
+```python
+# ✅ PATTERN 1: Enable UniForm (Iceberg compatibility)
+spark.sql("""
+    CREATE TABLE sales (
+        sale_id BIGINT,
+        product STRING,
+        amount DECIMAL(10,2),
+        sale_date DATE
+    )
+    USING DELTA
+    TBLPROPERTIES (
+        'delta.universalFormat.enabledFormats' = 'iceberg'
+    )
+""")
+
+# ✅ PATTERN 2: Enable UniForm on existing table
+spark.sql("""
+    ALTER TABLE sales
+    SET TBLPROPERTIES (
+        'delta.universalFormat.enabledFormats' = 'iceberg'
+    )
+""")
+# Requires: delta.columnMapping.mode = 'name'
+#           minReaderVersion = 3, minWriterVersion = 7
+
+# ✅ PATTERN 3: Enable both Iceberg AND Hudi
+spark.sql("""
+    ALTER TABLE sales
+    SET TBLPROPERTIES (
+        'delta.universalFormat.enabledFormats' = 'iceberg,hudi'
+    )
+""")
+
+# ✅ PATTERN 4: Read as Iceberg from another engine
+# From Trino/Presto:
+# SELECT * FROM iceberg.schema.sales WHERE sale_date = '2024-02-08'
+#
+# From Athena:
+# SELECT * FROM sales  (via Glue catalog with Iceberg metadata)
+#
+# From Spark with Iceberg catalog:
+# spark.read.format("iceberg").load("catalog.schema.sales")
+
+# ✅ PATTERN 5: Verify UniForm is working
+spark.sql("DESCRIBE DETAIL sales").select(
+    "format", "properties"
+).show(truncate=False)
+# properties should include universalFormat.enabledFormats = iceberg
+```
+
+---
+
+## **PART 16: Clone Operations**
+
+### **SHALLOW CLONE vs DEEP CLONE**
+
+```
+SHALLOW CLONE:
+  - Copies only metadata (transaction log)
+  - Does NOT copy Parquet data files
+  - Points to original data files
+  - Zero-copy — instant, no storage cost
+  - Changes to clone don't affect source
+  - If source files are VACUUM'd, clone breaks!
+
+  Source Table:                Clone Table:
+  ┌──────────────┐            ┌──────────────┐
+  │ _delta_log/  │            │ _delta_log/  │ (new, independent)
+  │ data/        │◄───────────│ (references) │ (points to source files)
+  │  file1.parq  │            └──────────────┘
+  │  file2.parq  │
+  └──────────────┘
+
+DEEP CLONE:
+  - Copies metadata AND all Parquet data files
+  - Fully independent copy
+  - Takes time and storage proportional to table size
+  - Safe — source changes don't affect clone
+
+  Source Table:                Clone Table:
+  ┌──────────────┐            ┌──────────────┐
+  │ _delta_log/  │            │ _delta_log/  │ (new copy)
+  │ data/        │            │ data/        │ (full copy)
+  │  file1.parq  │            │  file1.parq  │
+  │  file2.parq  │            │  file2.parq  │
+  └──────────────┘            └──────────────┘
+```
+
+### **Clone Patterns**
+
+```python
+# ✅ PATTERN 1: SHALLOW CLONE (instant copy for testing)
+spark.sql("""
+    CREATE TABLE events_dev
+    SHALLOW CLONE events
+""")
+# Instant — no data copied
+
+# ✅ PATTERN 2: DEEP CLONE (full independent copy)
+spark.sql("""
+    CREATE TABLE events_backup
+    DEEP CLONE events
+""")
+# Takes time — copies all data files
+
+# ✅ PATTERN 3: Clone to specific path
+spark.sql("""
+    CREATE TABLE events_staging
+    SHALLOW CLONE events
+    LOCATION '/delta/staging/events'
+""")
+
+# ✅ PATTERN 4: Clone specific version (time travel + clone)
+spark.sql("""
+    CREATE TABLE events_snapshot
+    DEEP CLONE events VERSION AS OF 100
+""")
+
+# ✅ PATTERN 5: Clone for A/B testing
+# Create test environment from production
+spark.sql("CREATE TABLE customers_test SHALLOW CLONE customers")
+
+# Modify test copy freely — source is untouched
+spark.sql("""
+    UPDATE customers_test
+    SET discount_tier = 'premium'
+    WHERE total_purchases > 10000
+""")
+
+# Run tests against customers_test
+# If test passes → apply same update to production
+# If test fails → drop customers_test (no cost)
+
+# ✅ PATTERN 6: Clone for schema migration
+# Clone current table
+spark.sql("CREATE TABLE users_v2 DEEP CLONE users")
+
+# Apply schema changes to clone
+spark.sql("ALTER TABLE users_v2 ADD COLUMNS (phone STRING)")
+spark.sql("ALTER TABLE users_v2 DROP COLUMN legacy_field")
+
+# Validate
+validation = spark.table("users_v2")
+assert validation.count() == spark.table("users").count()
+
+# Swap (rename)
+spark.sql("ALTER TABLE users RENAME TO users_v1_backup")
+spark.sql("ALTER TABLE users_v2 RENAME TO users")
+
+# ✅ PATTERN 7: Incremental DEEP CLONE (sync changes)
+# After initial deep clone, sync only new changes:
+spark.sql("""
+    CREATE OR REPLACE TABLE events_backup
+    DEEP CLONE events
+""")
+# Only copies files that changed since last clone
+```
+
+### **Clone Use Cases Summary**
+
+```
+┌────────────────────────┬────────────────┬──────────────────────────────┐
+│ Use Case               │ Clone Type     │ Why                          │
+├────────────────────────┼────────────────┼──────────────────────────────┤
+│ Dev/test environment   │ SHALLOW        │ Instant, no storage cost     │
+│ Disaster recovery      │ DEEP           │ Full independent backup      │
+│ Schema migration       │ DEEP           │ Safe to modify independently │
+│ A/B testing            │ SHALLOW        │ Fast setup, easy cleanup     │
+│ Cross-region replica   │ DEEP           │ Independent in each region   │
+│ Audit snapshot         │ DEEP + VERSION │ Point-in-time backup         │
+│ Table archival         │ DEEP           │ Archive before VACUUM        │
+└────────────────────────┴────────────────┴──────────────────────────────┘
+```
+
+---
+
+## **PART 17: CHECK Constraints**
+
+### **Table-Level Data Quality Enforcement**
+
+```python
+# ✅ PATTERN 1: Add CHECK constraint
+spark.sql("""
+    ALTER TABLE orders
+    ADD CONSTRAINT valid_amount CHECK (amount > 0)
+""")
+
+# Now any write with amount <= 0 will FAIL:
+# spark.sql("INSERT INTO orders VALUES (1, 'prod', -5.00, '2024-02-08')")
+# Error: CHECK constraint valid_amount (amount > 0) violated
+
+# ✅ PATTERN 2: Multiple constraints
+spark.sql("""
+    ALTER TABLE customers
+    ADD CONSTRAINT valid_email CHECK (email LIKE '%@%.%')
+""")
+
+spark.sql("""
+    ALTER TABLE customers
+    ADD CONSTRAINT valid_age CHECK (age >= 0 AND age <= 150)
+""")
+
+spark.sql("""
+    ALTER TABLE customers
+    ADD CONSTRAINT valid_status CHECK (status IN ('active', 'inactive', 'suspended'))
+""")
+
+# ✅ PATTERN 3: Date range constraints
+spark.sql("""
+    ALTER TABLE events
+    ADD CONSTRAINT valid_date CHECK (event_date >= '2020-01-01')
+""")
+
+spark.sql("""
+    ALTER TABLE events
+    ADD CONSTRAINT future_check CHECK (event_date <= current_date())
+""")
+
+# ✅ PATTERN 4: Cross-column constraints
+spark.sql("""
+    ALTER TABLE orders
+    ADD CONSTRAINT valid_dates CHECK (ship_date >= order_date)
+""")
+
+spark.sql("""
+    ALTER TABLE discounts
+    ADD CONSTRAINT valid_discount CHECK (
+        discount_pct >= 0 AND discount_pct <= 100
+        AND (discount_pct < 50 OR approval_status = 'manager_approved')
+    )
+""")
+
+# ✅ PATTERN 5: View existing constraints
+spark.sql("DESCRIBE DETAIL orders").select("properties").show(truncate=False)
+# Or:
+spark.sql("SHOW TBLPROPERTIES orders").show(truncate=False)
+
+# ✅ PATTERN 6: Drop a constraint
+spark.sql("""
+    ALTER TABLE orders
+    DROP CONSTRAINT valid_amount
+""")
+
+# ✅ PATTERN 7: NOT NULL constraints (also a form of CHECK)
+spark.sql("""
+    ALTER TABLE customers
+    ALTER COLUMN customer_id SET NOT NULL
+""")
+
+spark.sql("""
+    ALTER TABLE customers
+    ALTER COLUMN email SET NOT NULL
+""")
+```
+
+### **CHECK Constraints vs Application-Level Validation**
+
+```
+┌──────────────────────┬──────────────────────────┬─────────────────────────┐
+│ Aspect               │ CHECK Constraints        │ App-Level Validation    │
+├──────────────────────┼──────────────────────────┼─────────────────────────┤
+│ Enforcement point    │ Storage layer (Delta)    │ Application code        │
+│ Can be bypassed?     │ ❌ No (all writes)       │ ⚠️ Yes (if skipped)     │
+│ Multiple writers     │ ✅ All writers checked   │ ❌ Each must implement  │
+│ Error handling       │ Write fails immediately  │ Custom error handling   │
+│ Flexibility          │ SQL expressions only     │ Any logic               │
+│ Performance          │ Slight write overhead    │ Pre-write overhead      │
+│ Best for             │ Hard invariants          │ Soft/complex rules      │
+└──────────────────────┴──────────────────────────┴─────────────────────────┘
+
+BEST PRACTICE: Use BOTH
+  - CHECK constraints for hard invariants (amount > 0, valid status codes)
+  - App-level validation for complex business rules (cross-table checks)
+```
+
+---
+
+## **PART 18: Generated Columns & Identity Columns**
+
+### **Generated Columns (Auto-Computed)**
+
+```python
+# Generated columns are automatically computed from other columns
+# Useful for: partition columns, derived fields, denormalization
+
+# ✅ PATTERN 1: Generate date from timestamp (for partitioning)
+spark.sql("""
+    CREATE TABLE events (
+        event_id STRING,
+        event_timestamp TIMESTAMP,
+        event_date DATE GENERATED ALWAYS AS (CAST(event_timestamp AS DATE)),
+        user_id STRING,
+        event_type STRING
+    )
+    USING DELTA
+    PARTITIONED BY (event_date)
+""")
+# Writers only provide event_timestamp
+# event_date is auto-computed → partitioning is automatic!
+
+# ✅ PATTERN 2: Generate year/month for partitioning
+spark.sql("""
+    CREATE TABLE sales (
+        sale_id BIGINT,
+        sale_timestamp TIMESTAMP,
+        year INT GENERATED ALWAYS AS (YEAR(sale_timestamp)),
+        month INT GENERATED ALWAYS AS (MONTH(sale_timestamp)),
+        amount DECIMAL(10,2)
+    )
+    USING DELTA
+    PARTITIONED BY (year, month)
+""")
+
+# ✅ PATTERN 3: Generate hash for bucketing
+spark.sql("""
+    CREATE TABLE users (
+        user_id STRING,
+        user_bucket INT GENERATED ALWAYS AS (ABS(HASH(user_id)) % 256),
+        name STRING,
+        email STRING
+    )
+    USING DELTA
+""")
+
+# ✅ PATTERN 4: Generate uppercase key for case-insensitive lookups
+spark.sql("""
+    CREATE TABLE products (
+        product_code STRING,
+        product_code_upper STRING GENERATED ALWAYS AS (UPPER(product_code)),
+        name STRING,
+        price DECIMAL(10,2)
+    )
+    USING DELTA
+""")
+
+# Writing: Just provide the source columns
+spark.sql("""
+    INSERT INTO events (event_id, event_timestamp, user_id, event_type)
+    VALUES ('evt1', '2024-02-08 14:30:00', 'user1', 'click')
+""")
+# event_date is auto-populated as '2024-02-08'
+
+# QUERY OPTIMIZATION:
+# This query on event_timestamp auto-uses partition pruning on event_date:
+spark.sql("""
+    SELECT * FROM events
+    WHERE event_timestamp >= '2024-02-01' AND event_timestamp < '2024-03-01'
+""")
+# Delta infers: event_date >= '2024-02-01' AND event_date < '2024-03-01'
+# → Only scans February partition!
+```
+
+### **Identity Columns (Auto-Increment)**
+
+```python
+# Identity columns generate unique, auto-incrementing values
+# Useful for: surrogate keys, monotonically increasing IDs
+
+# ✅ PATTERN 1: Basic identity column
+spark.sql("""
+    CREATE TABLE customers (
+        customer_sk BIGINT GENERATED ALWAYS AS IDENTITY,
+        customer_id STRING,
+        name STRING,
+        email STRING
+    )
+    USING DELTA
+""")
+# customer_sk: 1, 2, 3, 4, ... (auto-generated, unique)
+
+# ✅ PATTERN 2: Identity with custom start and step
+spark.sql("""
+    CREATE TABLE orders (
+        order_sk BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1000 INCREMENT BY 1),
+        order_id STRING,
+        customer_id STRING,
+        amount DECIMAL(10,2)
+    )
+    USING DELTA
+""")
+# order_sk: 1000, 1001, 1002, ...
+
+# ✅ PATTERN 3: Identity as default (can be overridden)
+spark.sql("""
+    CREATE TABLE products (
+        product_sk BIGINT GENERATED BY DEFAULT AS IDENTITY,
+        product_id STRING,
+        name STRING
+    )
+    USING DELTA
+""")
+# GENERATED BY DEFAULT → can provide explicit value during INSERT
+# GENERATED ALWAYS → cannot override, always auto-generated
+
+# Writing: Omit the identity column
+spark.sql("""
+    INSERT INTO customers (customer_id, name, email)
+    VALUES ('cust_001', 'Alice', 'alice@example.com')
+""")
+# customer_sk is auto-assigned
+
+"""
+IDENTITY COLUMN CAVEATS:
+  - Values are UNIQUE but NOT NECESSARILY CONTIGUOUS
+    (gaps can occur due to failed transactions, parallelism)
+  - NOT a replacement for natural keys
+  - Requires minWriterVersion = 6
+  - Cannot be used with GENERATED ALWAYS AS (expression)
+"""
+```
+
+---
+
+## **PART 19: Bloom Filter Index**
+
+### **Point Lookup Optimization**
+
+```
+PROBLEM: Finding a specific record in a large table
+
+  Without Bloom Filter:
+  Query: SELECT * FROM events WHERE event_id = 'evt_abc123'
+  → Must check min/max stats for every file
+  → If event_id is random (UUID), min/max is useless
+  → Full table scan!
+
+  With Bloom Filter:
+  → Each file has a Bloom filter for event_id
+  → Bloom filter says "definitely NOT in this file" or "MAYBE in this file"
+  → Skip 99% of files → read only 1-2 files!
+
+  HOW IT WORKS:
+  ┌──────────────────────────────────────────────────┐
+  │ File 1: Bloom filter for event_id                │
+  │   "evt_abc123" → hash → check bits → NOT HERE    │ ← Skip!
+  │                                                   │
+  │ File 2: Bloom filter for event_id                │
+  │   "evt_abc123" → hash → check bits → NOT HERE    │ ← Skip!
+  │                                                   │
+  │ File 3: Bloom filter for event_id                │
+  │   "evt_abc123" → hash → check bits → MAYBE HERE  │ ← Read!
+  │   (Actually found: row 42,501)                    │
+  └──────────────────────────────────────────────────┘
+
+  False positive rate: ~1% (configurable)
+  False negative rate: 0% (NEVER misses a match)
+```
+
+### **Using Bloom Filters**
+
+```python
+# ✅ PATTERN 1: Create Bloom filter index
+spark.sql("""
+    CREATE BLOOMFILTER INDEX ON TABLE events
+    FOR COLUMNS (event_id OPTIONS (fpp=0.01, numItems=10000000))
+""")
+# fpp = false positive probability (default 0.01 = 1%)
+# numItems = expected distinct values
+
+# ✅ PATTERN 2: Via table properties
+spark.sql("""
+    ALTER TABLE events
+    SET TBLPROPERTIES (
+        'delta.dataSkippingNumIndexedCols' = '32',
+        'delta.bloomFilter.columns' = 'event_id,user_id',
+        'delta.bloomFilter.event_id.fpp' = '0.01',
+        'delta.bloomFilter.event_id.numItems' = '10000000',
+        'delta.bloomFilter.user_id.fpp' = '0.01',
+        'delta.bloomFilter.user_id.numItems' = '1000000'
+    )
+""")
+
+# ✅ PATTERN 3: Query benefits (automatic — no syntax change)
+# These queries automatically use Bloom filter:
+spark.sql("SELECT * FROM events WHERE event_id = 'evt_abc123'")
+spark.sql("SELECT * FROM events WHERE user_id IN ('user_1', 'user_2', 'user_3')")
+
+# ✅ PATTERN 4: Drop Bloom filter
+spark.sql("DROP BLOOMFILTER INDEX ON TABLE events FOR COLUMNS (event_id)")
+
+# ✅ PATTERN 5: Rebuild index after major changes
+# After OPTIMIZE or large data load, rebuild for accuracy:
+spark.sql("""
+    CREATE BLOOMFILTER INDEX ON TABLE events
+    FOR COLUMNS (event_id OPTIONS (fpp=0.01, numItems=50000000))
+""")
+```
+
+### **When to Use Bloom Filters**
+
+```
+GOOD candidates for Bloom filter:
+  ✅ High-cardinality columns (UUIDs, event IDs, user IDs)
+  ✅ Point lookups (WHERE id = 'value')
+  ✅ IN queries with few values
+  ✅ Columns with random/non-sequential values (hashes, UUIDs)
+
+BAD candidates for Bloom filter:
+  ❌ Low-cardinality columns (status, country) — min/max stats work fine
+  ❌ Range queries (WHERE date BETWEEN ...) — Bloom only works for equality
+  ❌ Already partitioned columns — partition pruning is better
+  ❌ Columns rarely used in WHERE clauses — wasted storage
+
+OVERHEAD:
+  Storage: ~10 bytes per distinct value per file (small)
+  Write:   ~5% slower (building Bloom filter during write)
+  Read:    Faster for point lookups, no impact on scans
+```
+
+---
+
+## **PART 20: Multi-Cluster Writes (S3/ADLS)**
+
+### **The S3 Consistency Problem**
+
+```
+PROBLEM: S3 doesn't support atomic rename
+
+  Delta Lake uses atomic file rename for commits:
+    Write 00005.json.tmp → Rename to 00005.json (atomic on HDFS/DBFS)
+
+  On S3:
+    ❌ Rename is NOT atomic (it's copy + delete)
+    ❌ Two writers could both "win" the same version
+    ❌ Corrupted transaction log!
+
+SOLUTION: S3DynamoDBLogStore
+
+  ┌──────────┐     ┌──────────────┐     ┌──────────┐
+  │ Writer A │────►│ DynamoDB     │◄────│ Writer B │
+  │ (EMR)    │     │ (Lock Table) │     │ (Glue)   │
+  └──────┬───┘     └──────────────┘     └──────┬───┘
+         │                                      │
+         ▼                                      ▼
+  ┌──────────────────────────────────────────────────┐
+  │                    S3 Bucket                      │
+  │  _delta_log/00005.json                           │
+  │  data/part-xxxxx.parquet                         │
+  └──────────────────────────────────────────────────┘
+
+  DynamoDB acts as a distributed lock:
+  1. Writer A: "I want to write version 5" → acquires lock
+  2. Writer B: "I want to write version 5" → blocked (lock held)
+  3. Writer A: Writes 00005.json to S3 → releases lock
+  4. Writer B: Retries as version 6
+```
+
+### **Configuring Multi-Cluster Writes**
+
+```python
+# ✅ PATTERN 1: Configure S3DynamoDBLogStore
+spark = SparkSession.builder \
+    .appName("MultiClusterDelta") \
+    .config("spark.delta.logStore.class",
+            "io.delta.storage.S3DynamoDBLogStore") \
+    .config("spark.io.delta.storage.S3DynamoDBLogStore.ddb.tableName",
+            "delta_log_lock_table") \
+    .config("spark.io.delta.storage.S3DynamoDBLogStore.ddb.region",
+            "us-east-1") \
+    .config("spark.hadoop.fs.s3a.access.key", "...") \
+    .config("spark.hadoop.fs.s3a.secret.key", "...") \
+    .getOrCreate()
+
+# ✅ PATTERN 2: Create DynamoDB lock table (one-time setup)
+# AWS CLI:
+# aws dynamodb create-table \
+#   --table-name delta_log_lock_table \
+#   --attribute-definitions \
+#     AttributeName=tablePath,AttributeType=S \
+#     AttributeName=fileName,AttributeType=S \
+#   --key-schema \
+#     AttributeName=tablePath,KeyType=HASH \
+#     AttributeName=fileName,KeyType=RANGE \
+#   --billing-mode PAY_PER_REQUEST \
+#   --region us-east-1
+
+# ✅ PATTERN 3: EMR configuration (emr-config.json)
+"""
+{
+  "Classification": "spark-defaults",
+  "Properties": {
+    "spark.delta.logStore.class": "io.delta.storage.S3DynamoDBLogStore",
+    "spark.io.delta.storage.S3DynamoDBLogStore.ddb.tableName": "delta_log",
+    "spark.io.delta.storage.S3DynamoDBLogStore.ddb.region": "us-east-1"
+  }
+}
+"""
+
+# ✅ PATTERN 4: ADLS (Azure) — built-in atomicity
+# Azure Data Lake Storage Gen2 supports atomic rename natively
+# No additional log store needed!
+spark = SparkSession.builder \
+    .config("spark.delta.logStore.class",
+            "io.delta.storage.AzureLogStore") \
+    .getOrCreate()
+
+# ✅ PATTERN 5: GCS — uses Cloud Storage lock
+spark = SparkSession.builder \
+    .config("spark.delta.logStore.class",
+            "io.delta.storage.GCSLogStore") \
+    .getOrCreate()
+```
+
+### **Multi-Cluster Architecture Patterns**
+
+```
+PATTERN A: Shared table, multiple writers (same data)
+  ┌────────────┐
+  │ EMR Job A  │──write──┐
+  └────────────┘         ▼
+                    ┌──────────┐     ┌─────────────┐
+                    │ DynamoDB │────►│ Delta Table  │
+                    │ (Lock)   │     │ (S3)         │
+  ┌────────────┐   └──────────┘     └─────────────┘
+  │ EMR Job B  │──write──┘
+  └────────────┘
+  Use case: Multiple ingest jobs writing to same table
+  Risk: Conflicts on UPDATE/MERGE (appends are safe)
+
+PATTERN B: Partition-isolated writers (recommended)
+  ┌────────────┐
+  │ Job A      │──write──► partition: region=US
+  └────────────┘
+  ┌────────────┐
+  │ Job B      │──write──► partition: region=EU
+  └────────────┘
+  ┌────────────┐
+  │ Job C      │──write──► partition: region=APAC
+  └────────────┘
+  All write to same Delta table, but different partitions
+  → Zero conflict, no locking needed!
+
+BEST PRACTICE:
+  1. Use APPEND mode when possible (no conflicts)
+  2. Partition-isolate concurrent writers
+  3. If MERGE is unavoidable, use DynamoDB LogStore
+  4. Monitor DynamoDB for throttling (enable auto-scaling)
+```
+
+---
+
+## **PART 21: Column Mapping**
+
+### **Name Mode vs ID Mode**
+
+```
+PROBLEM: Parquet files reference columns by POSITION (ordinal index)
+  Column 0 = "id", Column 1 = "name", Column 2 = "email"
+
+  Renaming "email" to "email_address" is IMPOSSIBLE without rewriting
+  all Parquet files (since position is embedded in file metadata).
+
+SOLUTION: Column Mapping
+  Adds a logical ID layer between column names and physical positions.
+
+  ┌────────────────────────────────────────────────────────┐
+  │ POSITION MODE (default, legacy):                       │
+  │   Logical: id(0), name(1), email(2)                    │
+  │   Physical: column_0, column_1, column_2               │
+  │   → Rename requires full rewrite                       │
+  │                                                        │
+  │ NAME MODE (delta.columnMapping.mode = 'name'):         │
+  │   Logical: id → col-abc, name → col-def, email → col-ghi│
+  │   Physical: col-abc, col-def, col-ghi (random IDs)    │
+  │   → Rename just updates mapping in metadata!           │
+  │   → Drop column just removes mapping — no file rewrite │
+  └────────────────────────────────────────────────────────┘
+```
+
+### **Using Column Mapping**
+
+```python
+# ✅ PATTERN 1: Enable column mapping
+spark.sql("""
+    ALTER TABLE customers
+    SET TBLPROPERTIES (
+        'delta.columnMapping.mode' = 'name',
+        'delta.minReaderVersion' = '2',
+        'delta.minWriterVersion' = '5'
+    )
+""")
+
+# ✅ PATTERN 2: Rename column (only works with column mapping!)
+spark.sql("""
+    ALTER TABLE customers
+    RENAME COLUMN email TO email_address
+""")
+# Instant — no data rewrite, just updates metadata mapping
+
+# ✅ PATTERN 3: Drop column (only works with column mapping!)
+spark.sql("""
+    ALTER TABLE customers
+    DROP COLUMN legacy_field
+""")
+# Instant — just removes from metadata
+# Physical data remains in Parquet files until VACUUM + OPTIMIZE
+
+# ✅ PATTERN 4: Rename nested struct fields
+spark.sql("""
+    ALTER TABLE events
+    RENAME COLUMN properties.user_agent TO properties.browser
+""")
+
+# ✅ PATTERN 5: Create table with column mapping from the start
+spark.sql("""
+    CREATE TABLE new_table (
+        id BIGINT,
+        name STRING,
+        data STRUCT<field1: STRING, field2: INT>
+    )
+    USING DELTA
+    TBLPROPERTIES (
+        'delta.columnMapping.mode' = 'name'
+    )
+""")
+```
+
+### **Column Mapping Caveats**
+
+```
+IMPORTANT CONSIDERATIONS:
+
+1. IRREVERSIBLE: Once enabled, cannot switch back to position mode
+
+2. PROTOCOL UPGRADE: Requires minReaderVersion=2, minWriterVersion=5
+   → Older Delta clients cannot read the table
+
+3. STREAMING IMPACT: Existing streaming queries must be restarted
+   after enabling column mapping
+
+4. REQUIRED FOR:
+   - Column rename (ALTER TABLE RENAME COLUMN)
+   - Column drop (ALTER TABLE DROP COLUMN)
+   - UniForm (requires name mode)
+   - Liquid Clustering (requires name mode)
+
+5. BEST PRACTICE: Enable on ALL new tables — there's no downside
+   and it unlocks critical features
+```
+
+---
+
+## **PART 22: Idempotent Writes (txnAppId / txnVersion)**
+
+### **Exactly-Once Batch Writes**
+
+```
+PROBLEM: Job fails after writing some data, then retries
+  Run 1: Writes 1000 rows → FAILS at commit → partial data? No (ACID)
+  Run 2: Writes 1000 rows → SUCCEEDS → but did Run 1 partially succeed?
+
+  With idempotent writes:
+  Run 1: txnAppId="job_daily_load", txnVersion=1 → FAILS
+  Run 2: txnAppId="job_daily_load", txnVersion=1 → SUCCEEDS
+  Run 3: txnAppId="job_daily_load", txnVersion=1 → SKIPPED (already done!)
+```
+
+### **Using Idempotent Writes**
+
+```python
+# ✅ PATTERN 1: Idempotent write with txn options
+df.write \
+    .format("delta") \
+    .mode("append") \
+    .option("txnAppId", "daily_sales_etl") \
+    .option("txnVersion", "20240208") \
+    .save("/delta/sales")
+
+# If this write is retried (same txnAppId + txnVersion):
+# Delta checks: "daily_sales_etl version 20240208 already committed"
+# → Write is SKIPPED silently (no error, no duplicate data)
+
+# ✅ PATTERN 2: Idempotent writes in orchestrated pipelines
+def idempotent_load(df, target_path, job_name, run_date):
+    """
+    Load data exactly once, even if retried.
+
+    Args:
+        df: Source DataFrame
+        target_path: Delta table path
+        job_name: Unique job identifier
+        run_date: Run date as version identifier
+    """
+    txn_version = run_date.strftime("%Y%m%d%H%M%S")
+
+    df.write \
+        .format("delta") \
+        .mode("append") \
+        .option("txnAppId", job_name) \
+        .option("txnVersion", txn_version) \
+        .save(target_path)
+
+    print(f"Write completed: {job_name} v{txn_version}")
+
+# Usage in Airflow DAG:
+from datetime import datetime
+
+idempotent_load(
+    df=daily_sales_df,
+    target_path="/delta/sales",
+    job_name="daily_sales_etl",
+    run_date=datetime(2024, 2, 8)
+)
+# Safe to retry — duplicate runs are automatically deduplicated
+
+# ✅ PATTERN 3: Idempotent streaming with foreachBatch
+def idempotent_upsert(batch_df, batch_id):
+    """Idempotent upsert for streaming."""
+    delta_table = DeltaTable.forPath(spark, "/delta/customers")
+
+    delta_table.alias("t").merge(
+        batch_df.alias("s"),
+        "t.customer_id = s.customer_id"
+    ).whenMatchedUpdateAll() \
+     .whenNotMatchedInsertAll() \
+     .execute()
+
+# foreachBatch + checkpointing already provides exactly-once
+# txnAppId adds extra safety for manual restarts:
+streaming_df.writeStream \
+    .foreachBatch(idempotent_upsert) \
+    .option("checkpointLocation", "/delta/checkpoints/customers") \
+    .start()
+
+# ✅ PATTERN 4: Check transaction history
+delta_table = DeltaTable.forPath(spark, "/delta/sales")
+history = delta_table.history()
+history.select("version", "operation", "operationParameters").show(truncate=False)
+# Look for txnAppId in operationParameters
+```
+
+---
+
+## **PART 23: Copy-on-Write vs Merge-on-Read**
+
+### **Two Strategies for Handling Updates**
+
+```
+COPY-ON-WRITE (CoW) — Delta Lake's default:
+═══════════════════════════════════════════
+
+  UPDATE: "Change user_123's email"
+
+  1. Find file containing user_123 (e.g., file_A.parquet, 128 MB, 1M rows)
+  2. Read entire file_A.parquet into memory
+  3. Apply change to user_123's row
+  4. Write NEW file_A_v2.parquet (128 MB, 1M rows)
+  5. Log: remove file_A, add file_A_v2
+
+  ┌────────────────┐     ┌────────────────┐
+  │ file_A.parquet │     │file_A_v2.parquet│
+  │ (1M rows)      │ ──► │ (1M rows)       │
+  │ user_123: old  │     │ user_123: NEW   │
+  │ 999,999 others │     │ 999,999 same    │
+  └────────────────┘     └────────────────┘
+       REMOVED                ADDED
+
+  Pros: ✅ Fast reads (no merge needed at query time)
+  Cons: ❌ Slow writes (full file rewrite for 1 row change)
+        ❌ Write amplification (128 MB to change 1 row)
+
+
+MERGE-ON-READ (MoR) — Used by Hudi, Iceberg; Delta via Deletion Vectors:
+════════════════════════════════════════════════════════════════════════
+
+  UPDATE: "Change user_123's email"
+
+  1. Write small delta file with ONLY the changed row (< 1 KB)
+  2. Mark old row position in deletion vector
+  3. At READ time: merge base file + delta file
+
+  ┌────────────────┐     ┌──────────────┐
+  │ file_A.parquet │  +  │ delta_file   │
+  │ (1M rows)      │     │ (1 row)      │
+  │ user_123: old  │     │ user_123: NEW│
+  └────────────────┘     └──────────────┘
+    NOT MODIFIED           SMALL NEW FILE
+
+  At read time:
+  file_A rows (skip deleted) + delta_file rows = merged result
+
+  Pros: ✅ Fast writes (only write changed rows)
+        ✅ Low write amplification
+  Cons: ❌ Slower reads (must merge at query time)
+        ❌ Requires periodic compaction
+```
+
+### **Comparison Table**
+
+```
+┌─────────────────────┬─────────────────────┬────────────────────────┐
+│ Aspect              │ Copy-on-Write (CoW) │ Merge-on-Read (MoR)    │
+├─────────────────────┼─────────────────────┼────────────────────────┤
+│ Write speed         │ ❌ Slow             │ ✅ Fast                │
+│ Read speed          │ ✅ Fast             │ ❌ Slower (merge cost) │
+│ Write amplification │ ❌ High (full file) │ ✅ Low (delta only)    │
+│ Storage efficiency  │ ❌ Duplicated data  │ ✅ Minimal extra       │
+│ Complexity          │ ✅ Simple           │ ❌ Complex (compaction)│
+├─────────────────────┼─────────────────────┼────────────────────────┤
+│ Best for            │ Read-heavy workloads│ Write-heavy workloads  │
+│                     │ Infrequent updates  │ Frequent updates/CDC   │
+│                     │ Analytics/BI        │ OLTP-like patterns     │
+├─────────────────────┼─────────────────────┼────────────────────────┤
+│ Delta Lake          │ ✅ Default mode     │ ⚠️ Via Deletion Vectors│
+│ Apache Iceberg      │ ✅ Supported        │ ✅ Supported (v2)      │
+│ Apache Hudi         │ ✅ COW table type   │ ✅ MOR table type      │
+└─────────────────────┴─────────────────────┴────────────────────────┘
+
+DELTA LAKE EVOLUTION:
+  v1.0: Copy-on-Write only
+  v2.0: Still CoW, but with Change Data Feed
+  v3.0: Deletion Vectors = partial MoR behavior
+        (marks deletes without rewriting, but inserts still CoW)
+
+  Delta's approach: CoW + Deletion Vectors = hybrid
+    - Deletes/updates: MoR-like (deletion vector, no file rewrite)
+    - New inserts: CoW (new Parquet files)
+    - OPTIMIZE: Materializes all changes (compacts DVs)
+
+INTERVIEW ANSWER:
+  "Delta Lake uses Copy-on-Write by default, which optimizes for read-heavy
+   analytics workloads. With Deletion Vectors (v3.0+), it adds MoR-like
+   behavior for deletes and updates without full file rewrites. Hudi offers
+   both CoW and MoR as explicit table types. Iceberg v2 also supports both.
+   The tradeoff is always write performance vs read performance."
+```
+
+---
+
 ## **QUICK REFERENCE CARD**
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│            DELTA LAKE COMMAND QUICK REFERENCE              │
-├────────────────────────────────────────────────────────────┤
-│                                                            │
-│ CREATE:                                                    │
-│ df.write.format("delta").save(path)                        │
-│ CREATE TABLE name USING DELTA                             │
-│                                                            │
-│ READ:                                                      │
-│ spark.read.format("delta").load(path)                      │
-│ spark.read.format("delta").option("versionAsOf", N)       │
-│                                                            │
-│ UPDATE:                                                    │
-│ delta_table.update(condition, set={...})                   │
-│                                                            │
-│ DELETE:                                                    │
-│ delta_table.delete(condition)                              │
-│                                                            │
-│ MERGE (UPSERT):                                            │
-│ delta_table.merge(source, condition)                       │
-│   .whenMatchedUpdate(...)                                  │
-│   .whenNotMatchedInsert(...)                               │
-│   .execute()                                               │
-│                                                            │
-│ OPTIMIZE:                                                  │
-│ delta_table.optimize().executeCompaction()                 │
-│ delta_table.optimize().executeZOrderBy("col1", "col2")     │
-│                                                            │
-│ VACUUM:                                                    │
-│ delta_table.vacuum(retentionHours)                         │
-│                                                            │
-│ TIME TRAVEL:                                               │
-│ delta_table.history()                                      │
-│ delta_table.restoreToVersion(N)                            │
-│                                                            │
-│ SCHEMA:                                                    │
-│ .option("mergeSchema", "true")                             │
-│ .option("overwriteSchema", "true")                         │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│              DELTA LAKE COMMAND QUICK REFERENCE (Complete)            │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│ CREATE:                                                              │
+│ df.write.format("delta").save(path)                                  │
+│ CREATE TABLE name USING DELTA                                       │
+│                                                                      │
+│ READ:                                                                │
+│ spark.read.format("delta").load(path)                                │
+│ spark.read.format("delta").option("versionAsOf", N)                 │
+│                                                                      │
+│ UPDATE:                                                              │
+│ delta_table.update(condition, set={...})                             │
+│                                                                      │
+│ DELETE:                                                              │
+│ delta_table.delete(condition)                                        │
+│                                                                      │
+│ MERGE (UPSERT):                                                      │
+│ delta_table.merge(source, condition)                                 │
+│   .whenMatchedUpdate(...)                                            │
+│   .whenNotMatchedInsert(...)                                         │
+│   .execute()                                                         │
+│                                                                      │
+│ OPTIMIZE:                                                            │
+│ delta_table.optimize().executeCompaction()                           │
+│ delta_table.optimize().executeZOrderBy("col1", "col2")               │
+│                                                                      │
+│ VACUUM:                                                              │
+│ delta_table.vacuum(retentionHours)                                   │
+│                                                                      │
+│ TIME TRAVEL:                                                         │
+│ delta_table.history()                                                │
+│ delta_table.restoreToVersion(N)                                      │
+│                                                                      │
+│ SCHEMA:                                                              │
+│ .option("mergeSchema", "true")                                       │
+│ .option("overwriteSchema", "true")                                   │
+│                                                                      │
+│ LIQUID CLUSTERING (replaces PARTITIONED BY + ZORDER):                │
+│ CREATE TABLE t (...) USING DELTA CLUSTER BY (col1, col2)             │
+│ ALTER TABLE t CLUSTER BY (col3, col4)    -- change anytime           │
+│ ALTER TABLE t CLUSTER BY NONE            -- disable                  │
+│                                                                      │
+│ DELETION VECTORS:                                                    │
+│ SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'true')           │
+│ -- DELETE/UPDATE/MERGE then use DVs automatically                    │
+│                                                                      │
+│ UNIFORM (cross-format):                                              │
+│ SET TBLPROPERTIES ('delta.universalFormat.enabledFormats'='iceberg') │
+│                                                                      │
+│ CLONE:                                                               │
+│ CREATE TABLE clone SHALLOW CLONE source                              │
+│ CREATE TABLE backup DEEP CLONE source VERSION AS OF N                │
+│                                                                      │
+│ CHECK CONSTRAINTS:                                                   │
+│ ALTER TABLE t ADD CONSTRAINT ck CHECK (amount > 0)                   │
+│ ALTER TABLE t DROP CONSTRAINT ck                                     │
+│                                                                      │
+│ GENERATED COLUMNS:                                                   │
+│ col_name TYPE GENERATED ALWAYS AS (expression)                       │
+│                                                                      │
+│ IDENTITY COLUMNS:                                                    │
+│ col_name BIGINT GENERATED ALWAYS AS IDENTITY                         │
+│                                                                      │
+│ BLOOM FILTER:                                                        │
+│ CREATE BLOOMFILTER INDEX ON TABLE t FOR COLUMNS (col)                │
+│                                                                      │
+│ COLUMN MAPPING:                                                      │
+│ SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name')              │
+│ ALTER TABLE t RENAME COLUMN old_name TO new_name                     │
+│ ALTER TABLE t DROP COLUMN col_name                                   │
+│                                                                      │
+│ IDEMPOTENT WRITES:                                                   │
+│ .option("txnAppId", "job_name").option("txnVersion", "run_id")      │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -1835,13 +3370,169 @@ New: {id, first_name, last_name}
 Result: {id, first_name, last_name} (email column lost!)
 ```
 
----
+### **Q6: What is Liquid Clustering and why does it replace partitioning + Z-ORDER?**
 
-Would you like me to:
-1. **Cover Delta Lake with Unity Catalog** (governance, lineage)?
-2. **Deep dive into Change Data Feed** (CDC streaming)?
-3. **Show multi-cluster writes** (Delta Lake on S3)?
-4. **Cover Delta sharing** (cross-platform data sharing)?
-5. **Build complete ETL pipeline examples** with Delta Lake?
+**Answer:**
+```
+Traditional approach requires TWO mechanisms:
+  PARTITIONED BY (date)     → physical directory layout (irreversible)
+  ZORDER BY (user_id)       → file-level data colocating (manual OPTIMIZE)
 
-**Master these Delta Lake patterns and you'll be ready for any lakehouse interview!** 🚀
+Problems:
+  - Partition columns locked at table creation
+  - Over-partitioning → small files; under-partitioning → full scans
+  - Z-ORDER must be run manually and rewrites ALL data
+
+Liquid Clustering (Delta 3.0+):
+  CLUSTER BY (user_id, date) → single mechanism, changeable anytime
+  - ALTER TABLE t CLUSTER BY (new_col) → instant, no rewrite
+  - Incremental: only clusters new/modified data
+  - No small files problem (no directory-per-partition)
+  - Auto-clusters during optimizeWrite
+
+When to use:
+  - All NEW tables (no reason to use old approach)
+  - Existing tables where partition scheme is suboptimal
+  - Tables where query patterns evolve over time
+```
+
+### **Q7: What are Deletion Vectors and how do they improve performance?**
+
+**Answer:**
+```
+Without DVs (Copy-on-Write):
+  DELETE 5 rows from 128 MB file (1M rows)
+  → Read 128 MB, remove 5 rows, write 128 MB
+  → 256 MB I/O for 5 rows!
+
+With DVs:
+  DELETE 5 rows from 128 MB file
+  → Write 1 KB bitmap marking positions {42, 1089, 50001, ...}
+  → Original file untouched!
+  → 1 KB I/O instead of 256 MB
+
+Trade-off:
+  Reads must check DV bitmap → ~5% read overhead
+  Periodically run OPTIMIZE to materialize deletions
+
+Enable: SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'true')
+Requires: minReaderVersion=3, minWriterVersion=7
+```
+
+### **Q8: Delta Lake vs Iceberg vs Hudi — when to choose which?**
+
+**Answer:**
+```
+Delta Lake: Best for Databricks-centric architectures
+  - Tightest Spark integration
+  - Unity Catalog for governance
+  - Liquid Clustering, Photon engine
+  - UniForm bridges to Iceberg/Hudi
+
+Iceberg: Best for multi-engine, vendor-neutral architectures
+  - Works natively with Spark, Trino, Flink, Dremio, Athena
+  - Hidden partitioning (users don't need to know partition scheme)
+  - Partition Evolution (change partitioning without rewriting)
+  - Strongest open-source community momentum
+
+Hudi: Best for high-frequency upsert / CDC workloads
+  - Built-in record-level indexing (fastest point lookups)
+  - Native MoR table type (write-optimized)
+  - Inline compaction (no separate job)
+  - Best for near-real-time CDC pipelines
+
+All three provide ACID, time travel, and schema evolution.
+The differentiator is ecosystem fit and workload pattern.
+```
+
+### **Q9: How does Delta Lake handle concurrent writes on S3?**
+
+**Answer:**
+```
+Problem: S3 doesn't support atomic rename (needed for commits)
+
+Solution: S3DynamoDBLogStore
+  - DynamoDB acts as distributed lock for commit coordination
+  - Writer acquires lock → writes commit JSON → releases lock
+  - Competing writers wait or retry
+
+Configuration:
+  spark.delta.logStore.class = io.delta.storage.S3DynamoDBLogStore
+  + DynamoDB table with (tablePath HASH, fileName RANGE)
+
+ADLS (Azure): Atomic rename is native → no extra config needed
+GCS: Uses GCSLogStore for consistency
+
+Best practice: Partition-isolate concurrent writers when possible
+(appends to different partitions never conflict)
+```
+
+### **Q10: What is UniForm and when would you use it?**
+
+**Answer:**
+```
+UniForm = Universal Format
+  Write as Delta Lake → auto-generates Iceberg (and/or Hudi) metadata
+  Same Parquet files readable by all three table formats
+
+Use case:
+  Team A (Databricks) writes Delta tables
+  Team B (Trino/Athena) reads as Iceberg
+  Team C (EMR Hudi) reads as Hudi
+  → ONE copy of data, THREE metadata layers
+
+Enable:
+  SET TBLPROPERTIES ('delta.universalFormat.enabledFormats' = 'iceberg')
+
+Requires: column mapping mode = 'name'
+
+Key: Delta is the primary writer; Iceberg/Hudi metadata is read-only
+```
+
+### **Q11: Explain Copy-on-Write vs Merge-on-Read in the context of table formats.**
+
+**Answer:**
+```
+Copy-on-Write (CoW):
+  UPDATE 1 row in 128 MB file → rewrite entire 128 MB file
+  ✅ Fast reads (no merge at query time)
+  ❌ Slow writes (full file rewrite)
+  Used by: Delta Lake (default), Iceberg (default), Hudi (COW table)
+
+Merge-on-Read (MoR):
+  UPDATE 1 row → write tiny delta file (1 KB) + deletion marker
+  ✅ Fast writes (only write changes)
+  ❌ Slower reads (must merge base + delta at query time)
+  Used by: Hudi (MOR table), Iceberg v2
+
+Delta Lake's approach (v3.0+):
+  Hybrid — CoW + Deletion Vectors
+  Deletes/updates: DV bitmap (MoR-like, no file rewrite)
+  Inserts: new Parquet files (CoW)
+  OPTIMIZE: materializes all DVs (compacts back to pure CoW)
+```
+
+### **Q12: What is Column Mapping and why is it required for modern Delta features?**
+
+**Answer:**
+```
+Problem: Parquet references columns by position (ordinal index)
+  → Renaming or dropping columns requires rewriting ALL files
+
+Column Mapping (delta.columnMapping.mode = 'name'):
+  → Adds logical ID layer between names and physical positions
+  → Rename = metadata-only change (instant)
+  → Drop = metadata-only change (instant)
+
+Required for:
+  - ALTER TABLE RENAME COLUMN
+  - ALTER TABLE DROP COLUMN
+  - UniForm
+  - Liquid Clustering
+
+Enable: SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name')
+Protocol: minReaderVersion=2, minWriterVersion=5
+Warning: Irreversible — cannot switch back to position mode
+
+Best practice: Enable on ALL new tables (no downside)
+```

@@ -33,10 +33,14 @@
 23. STEP 22: Speculation Settings
 24. STEP 23: Compression Codec
 25. STEP 24: Data Partitioning (Write Layout)
-26. Full Calculation Summary
-27. Final spark-submit Command
-28. Scaling Formula: Any Data Size
-29. Verification Checklist
+26. STEP 25: AQE (Adaptive Query Execution) Settings
+27. STEP 26: Shuffle Buffer & Reducer I/O Settings
+28. STEP 27: Number of Partitions — Master Formula (5 TB)
+29. STEP 28: EC2 Instance Selection — AWS Decision Framework
+30. Full Calculation Summary
+31. Final spark-submit Command
+32. Scaling Formula: Any Data Size
+33. Verification Checklist
 ```
 
 ---
@@ -711,7 +715,593 @@ RULES:
 
 ---
 
-## 26. Full Calculation Summary
+## 26. STEP 25: AQE (Adaptive Query Execution) Settings
+
+```
+AQE automatically optimizes query plans at runtime based on actual data statistics.
+Enabled by default in Spark 3.2+, but thresholds should be tuned to your cluster.
+
+──────────────────────────────────────────────────────────────────────
+A. ADVISORY PARTITION SIZE (post-shuffle coalescing target)
+──────────────────────────────────────────────────────────────────────
+FORMULA:
+  advisory_partition_size = target_partition_size from Step 12
+  advisory_partition_size = 256 MB
+
+  WHY 256 MB?
+    - Matches the shuffle partition target (128 MB – 1 GB sweet spot)
+    - AQE coalesces tiny post-shuffle partitions UP to this size
+    - Prevents 3,000 partitions from producing 3,000 tiny files if most are small
+
+VERIFY:
+  256 MB << 2.14 GB memory_per_task → safe ✅
+  256 MB > 64 MB minimum → avoids scheduling overhead ✅
+
+──────────────────────────────────────────────────────────────────────
+B. SKEW JOIN: SKEWED PARTITION THRESHOLD
+──────────────────────────────────────────────────────────────────────
+FORMULA:
+  skew_threshold = advisory_partition_size × skew_factor_multiplier
+  skew_threshold = 256 MB × 1  (same as advisory; Spark splits partitions exceeding this)
+
+  ALTERNATIVELY:
+    skew_threshold = memory_per_task × safety_factor
+    skew_threshold = 2.14 GB × 0.12
+    skew_threshold = 256 MB
+
+  A partition is "skewed" if:
+    partition_size > skew_threshold  AND
+    partition_size > median_partition_size × skewedPartitionFactor
+
+VERIFY:
+  Skewed partitions > 256 MB get split → each sub-partition ≤ 256 MB
+  256 MB fits easily in 2.14 GB memory_per_task ✅
+
+──────────────────────────────────────────────────────────────────────
+C. SKEW JOIN: SKEWED PARTITION FACTOR
+──────────────────────────────────────────────────────────────────────
+FORMULA:
+  skewed_partition_factor = N  (a partition is skewed if N× larger than median)
+
+  CALCULATION:
+    For 5 TB with 3,000 shuffle partitions:
+      median_partition_size ≈ 5 TB / 3,000 = 1.7 GB
+      If a key has 10x more data → skewed partition = 17 GB
+      17 GB / 1.7 GB = 10x → definitely skewed
+
+    RECOMMENDED: 5  (triggers when a partition is 5× the median)
+      At 5×: skew detection triggers at 1.7 GB × 5 = 8.5 GB → will split into ~33 sub-partitions
+      At 10×: too lenient, may miss moderate skew
+
+──────────────────────────────────────────────────────────────────────
+D. COALESCE PARTITIONS (merge small partitions)
+──────────────────────────────────────────────────────────────────────
+FORMULA:
+  coalesce_min_partitions = total_cores  (at minimum, keep 1 partition per core)
+  coalesce_min_partitions = 375
+
+  WHY:
+    - After filters/aggregations, many of 3,000 partitions may be nearly empty
+    - AQE merges them until each reaches advisory_partition_size (256 MB)
+    - Floor is total_cores to maintain parallelism
+
+SUMMARY:
+  AQE will dynamically adjust the 3,000 shuffle partitions:
+    - Merge small partitions → target 256 MB each (coalesce)
+    - Split large partitions → target 256 MB each (skew join)
+    - Result: self-tuning partition sizes at runtime ✅
+```
+
+**Config:**
+```
+spark.sql.adaptive.enabled = true
+spark.sql.adaptive.coalescePartitions.enabled = true
+spark.sql.adaptive.coalescePartitions.minPartitionSize = 64MB
+spark.sql.adaptive.advisoryPartitionSizeInBytes = 256MB
+spark.sql.adaptive.skewJoin.enabled = true
+spark.sql.adaptive.skewJoin.skewedPartitionFactor = 5
+spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes = 256MB
+```
+
+---
+
+## 27. STEP 26: Shuffle Buffer & Reducer I/O Settings
+
+```
+These control how shuffle data is written to disk and read over the network.
+
+──────────────────────────────────────────────────────────────────────
+A. SHUFFLE FILE BUFFER (write-side buffer)
+──────────────────────────────────────────────────────────────────────
+FORMULA:
+  shuffle_file_buffer = optimal_disk_write_buffer for NVMe SSD
+  Default = 32 KB (too small for large shuffles)
+
+  CALCULATION:
+    shuffle_data_per_executor = total_shuffle_data / total_executors
+    shuffle_data_per_executor = 7.5 TB / 75 = 100 GB
+
+    At 32 KB buffer → 100 GB / 32 KB = 3,276,800 disk writes per executor
+    At 1 MB buffer  → 100 GB / 1 MB  = 102,400 disk writes per executor
+                    → 32× fewer I/O operations ✅
+
+  RECOMMENDED: 1 MB (reduces disk I/O syscalls by 32×)
+
+  CONSTRAINT:
+    buffer_memory_per_executor = shuffle_file_buffer × active_shuffle_files
+    buffer_memory = 1 MB × 200 (open shuffle files) = 200 MB
+    200 MB << 36 GB executor_memory → negligible overhead ✅
+
+──────────────────────────────────────────────────────────────────────
+B. REDUCER MAX SIZE IN FLIGHT (read-side network buffer)
+──────────────────────────────────────────────────────────────────────
+FORMULA:
+  max_in_flight = memory_per_task × fraction_for_network_buffer
+  max_in_flight = 2.14 GB × 0.04 to 0.05
+  max_in_flight = 86 MB to 107 MB ≈ 96 MB
+
+  WHAT THIS IS:
+    - Max total size of shuffle blocks fetched simultaneously per reduce task
+    - Larger → more network pipelining, fewer round-trips
+    - Too large → competes with execution memory
+
+  DEFAULT: 48 MB (too conservative for 5 TB)
+
+  CALCULATION:
+    With 96 MB buffer and 10 Gbps network:
+      fetch_time_per_batch = 96 MB / (10 Gbps / 8) = 96 / 1,250 = 0.077s
+      Overlaps with processing → near-zero network wait ✅
+
+  VERIFY:
+    5 cores × 96 MB = 480 MB per executor for reducer buffers
+    480 MB << 10.7 GB execution_memory → safe ✅
+
+──────────────────────────────────────────────────────────────────────
+C. SHUFFLE SORT SPILL THRESHOLD
+──────────────────────────────────────────────────────────────────────
+FORMULA:
+  sort_spill_threshold = execution_memory / cores_per_executor × 0.5
+  sort_spill_threshold = 10.7 GB / 5 × 0.5
+  sort_spill_threshold ≈ 1 GB
+
+  (Controlled internally by Spark; listed here for understanding)
+```
+
+**Config:**
+```
+spark.shuffle.file.buffer = 1m
+spark.reducer.maxSizeInFlight = 96m
+spark.shuffle.compress = true
+spark.shuffle.spill.compress = true
+```
+
+---
+
+## 28. STEP 27: Number of Partitions — Master Formula (5 TB)
+
+> This section unifies all partition calculations into one place with clear formulas applied to the 5 TB dataset.
+
+### A. Input Read Partitions (when Spark reads the 5 TB source)
+
+```
+FORMULA:
+  input_partitions = ceil(total_file_size / maxPartitionBytes)
+
+GIVEN:
+  total_file_size     = D = 5 TB = 5,120 GB = 5,242,880 MB
+  maxPartitionBytes   = spark.sql.files.maxPartitionBytes = 128 MB (default)
+  openCostInBytes     = spark.sql.files.openCostInBytes   = 4 MB  (default)
+
+CALCULATION:
+  input_partitions = ceil(5,242,880 MB / 128 MB)
+  input_partitions = ceil(40,960)
+  input_partitions = 40,960 partitions
+
+WHAT THIS MEANS:
+  - Spark will create ~40,960 tasks for the initial read stage
+  - Each task reads ~128 MB of compressed Parquet
+  - Each task decompresses to ~384 MB in memory (128 MB × 3x compression ratio)
+
+VERIFY:
+  partition_in_memory = 128 MB × CR = 128 × 3 = 384 MB
+  384 MB << 2.14 GB memory_per_task → fits comfortably ✅
+  40,960 tasks / 375 cores = ~109 waves → acceptable for initial scan ✅
+```
+
+**Config:** `spark.sql.files.maxPartitionBytes = 128MB` _(default, rarely needs changing)_
+
+### B. Shuffle Partitions (after joins, groupBy, aggregations)
+
+```
+FORMULA:
+  shuffle_partitions = ceil(data_in_memory_after_shuffle / target_partition_size)
+
+GIVEN:
+  data_in_memory = D × CR = 5 TB × 3 = 15 TB = 15,360 GB
+  shuffle_selectivity = 0.50  (assume 50% of data survives filters before shuffle)
+  shuffled_data = 15,360 GB × 0.50 = 7,680 GB
+  target_partition_size = 256 MB (sweet spot for shuffle: 128 MB – 1 GB)
+
+CALCULATION:
+  shuffle_partitions = ceil(7,680 GB / 0.256 GB)
+  shuffle_partitions = ceil(30,000)
+  shuffle_partitions = 30,000 (theoretical upper bound)
+
+PRACTICAL ADJUSTMENT (with AQE):
+  Start with fewer partitions; AQE will split skewed partitions automatically.
+  Recommended = 3,000 to 5,000
+
+VERIFY (at 3,000 partitions):
+  partition_size = 7,680 GB / 3,000 = 2.56 GB
+  memory_per_task = 2.14 GB → BORDERLINE (may spill to disk) ⚠️
+  With AQE auto-coalesce, small partitions merge → effective sizes stay optimal ✅
+
+VERIFY (at 5,000 partitions):
+  partition_size = 7,680 GB / 5,000 = 1.54 GB
+  memory_per_task = 2.14 GB → fits with headroom ✅
+```
+
+**Config:** `spark.sql.shuffle.partitions = 3000` _(with AQE enabled)_
+
+### C. Output/Write Partitions (final write to storage)
+
+```
+FORMULA:
+  output_partitions = ceil(output_data_size / target_output_file_size)
+
+GIVEN:
+  output_data_compressed = 5 TB  (assuming 1:1 output-to-input ratio)
+  target_output_file_size = 512 MB (Parquet best practice: 256 MB – 1 GB)
+
+CALCULATION:
+  output_partitions = ceil(5,120 GB / 0.512 GB)
+  output_partitions = ceil(10,000)
+  output_partitions = 10,000 output files
+
+  If heavy aggregation reduces output to 500 GB:
+    output_partitions = ceil(500 GB / 0.256 GB) = 1,953 ≈ 2,000 files
+
+APPLY:
+  df.repartition(10000).write.parquet(...)   # uniform file sizes
+  # OR
+  df.coalesce(10000).write.parquet(...)      # if already near target count
+```
+
+### D. Unified Partition Count Summary for 5 TB
+
+```
+┌──────────────────────────┬─────────────────────────────────────────────────┬──────────────┐
+│ Stage                    │ Formula                                         │ Value (5 TB) │
+├──────────────────────────┼─────────────────────────────────────────────────┼──────────────┤
+│ Input Read Partitions    │ ceil(D / maxPartitionBytes)                     │ 40,960       │
+│                          │ ceil(5 TB / 128 MB)                             │              │
+├──────────────────────────┼─────────────────────────────────────────────────┼──────────────┤
+│ Shuffle Partitions       │ ceil(D × CR × selectivity / target_part_size)  │ 3,000–5,000  │
+│                          │ ceil(5 TB × 3 × 0.5 / 256 MB)                 │ (30K theor.) │
+├──────────────────────────┼─────────────────────────────────────────────────┼──────────────┤
+│ Default Parallelism(RDD) │ total_cores × 2                                │ 750          │
+│                          │ 375 × 2                                         │              │
+├──────────────────────────┼─────────────────────────────────────────────────┼──────────────┤
+│ Output Write Partitions  │ ceil(output_size / target_file_size)            │ 2,000–10,000 │
+│                          │ ceil(5 TB / 512 MB)                             │              │
+├──────────────────────────┼─────────────────────────────────────────────────┼──────────────┤
+│ Data Layout Partitions   │ unique(partition_columns)                       │ ~730         │
+│ (year/month/day)         │ ~365 days/year × 2 years                       │              │
+└──────────────────────────┴─────────────────────────────────────────────────┴──────────────┘
+
+KEY CONSTRAINT:
+  Every partition must satisfy:
+    partition_size_in_memory ≤ memory_per_task
+    partition_size_in_memory ≤ execution_memory / cores_per_executor
+    partition_size_in_memory ≤ 10.7 GB / 5 = 2.14 GB
+```
+
+---
+
+## 29. STEP 28: EC2 Instance Selection — AWS Decision Framework
+
+> Choose the right EC2 instance type BEFORE calculating any Spark parameter.
+> The instance determines M_node and C_node, which feed into every formula.
+
+### A. Instance Selection Decision Tree
+
+```
+STEP 1: Determine Workload Profile
+──────────────────────────────────────────────────────────────────────
+
+  QUESTION: What is the memory-to-core ratio you need?
+
+  IF heavy joins/caching/large shuffles (most ETL/ELT):
+    → Memory-optimized (r-series): 8 GB/core ratio
+    → Best for: 80% of Spark workloads
+
+  IF CPU-heavy transformations (parsing, regex, ML feature engineering):
+    → Compute-optimized (c-series): 2 GB/core ratio
+    → Best for: lightweight transforms on small-to-medium data
+
+  IF shuffle-heavy with massive spill (multi-way joins on 10+ TB):
+    → Storage-optimized (i-series, d-series): local NVMe SSDs
+    → Best for: shuffle-intensive jobs that spill heavily to disk
+
+  IF balanced/general ETL (moderate joins, moderate caching):
+    → General-purpose (m-series): 4 GB/core ratio
+    → Best for: cost-sensitive, non-extreme workloads
+
+STEP 2: Determine Instance Size
+──────────────────────────────────────────────────────────────────────
+
+  FORMULA:
+    required_RAM_per_node = (D × CR × SF × active_fraction) / target_nodes
+    required_cores_per_node = target_total_cores / target_nodes
+
+    WHERE:
+      D = data size in GB
+      CR = compression ratio (3 for Snappy Parquet)
+      SF = shuffle factor (2 for ETL)
+      active_fraction = 0.15 (15% of data active at any time)
+      target_nodes = chosen based on cost/performance tradeoff
+
+  FOR 5 TB:
+    required_RAM = (5,120 × 3 × 2 × 0.15) / 25 = 184 GB per node
+    → Round down: 128 GB per node is sufficient (Spark processes in stages)
+    → Instance: r5.4xlarge (16 vCPU, 128 GB) ✅
+
+  FOR 1 TB:
+    required_RAM = (1,024 × 3 × 2 × 0.15) / 8 = 115 GB per node
+    → 64 GB per node is sufficient for staged processing
+    → Instance: r5.2xlarge (8 vCPU, 64 GB) ✅
+
+  FOR 20 TB:
+    required_RAM = (20,480 × 3 × 2 × 0.15) / 85 = 217 GB per node
+    → 256 GB per node for headroom
+    → Instance: r5.8xlarge (32 vCPU, 256 GB) ✅
+```
+
+### B. AWS EC2 Instance Catalog for Spark Workloads
+
+```
+═══════════════════════════════════════════════════════════════════════
+MEMORY-OPTIMIZED (r-series) — RECOMMENDED for most Spark workloads
+═══════════════════════════════════════════════════════════════════════
+
+Instance       vCPUs  RAM(GB)  Network     Local SSD    $/hr(OD)  $/hr(Spot~)
+─────────────  ─────  ───────  ──────────  ──────────   ────────  ──────────
+r5.xlarge        4      32     Up to 10G   EBS only      0.252     ~0.08
+r5.2xlarge       8      64     Up to 10G   EBS only      0.504     ~0.15
+r5.4xlarge      16     128     Up to 10G   EBS only      1.008     ~0.30
+r5.8xlarge      32     256     10 Gbps     EBS only      2.016     ~0.60
+r5.12xlarge     48     384     12 Gbps     EBS only      3.024     ~0.90
+r5.16xlarge     64     512     20 Gbps     EBS only      4.032     ~1.20
+r5.24xlarge     96     768     25 Gbps     EBS only      6.048     ~1.80
+
+r5d.4xlarge     16     128     Up to 10G   2×300GB NVMe  1.152     ~0.35
+r5d.8xlarge     32     256     10 Gbps     2×600GB NVMe  2.304     ~0.69
+r5d.12xlarge    48     384     12 Gbps     2×900GB NVMe  3.456     ~1.04
+r5d.24xlarge    96     768     25 Gbps     4×900GB NVMe  6.912     ~2.07
+
+r6i.4xlarge     16     128     Up to 12.5G EBS only      1.008     ~0.30
+r6i.8xlarge     32     256     12.5 Gbps   EBS only      2.016     ~0.60
+
+r6gd.4xlarge    16     128     Up to 10G   1×950GB NVMe  0.869     ~0.26
+  (Graviton2 — 20% cheaper, ARM-based, excellent for PySpark/Spark SQL)
+
+WHY r-series for Spark:
+  - 8 GB per vCPU → executor_memory / cores_per_executor ratio is optimal
+  - Enough RAM to avoid excessive disk spill
+  - Handles joins, caching, and shuffles efficiently
+
+═══════════════════════════════════════════════════════════════════════
+STORAGE-OPTIMIZED (i-series) — For shuffle-heavy / spill-heavy jobs
+═══════════════════════════════════════════════════════════════════════
+
+Instance       vCPUs  RAM(GB)  Network     Local SSD         $/hr(OD)
+─────────────  ─────  ───────  ──────────  ─────────────     ────────
+i3.xlarge        4      30.5   Up to 10G   1×950GB NVMe       0.312
+i3.2xlarge       8      61     Up to 10G   1×1.9TB NVMe       0.624
+i3.4xlarge      16     122     Up to 10G   2×1.9TB NVMe       1.248
+i3.8xlarge      32     244     10 Gbps     4×1.9TB NVMe       2.496
+i3.16xlarge     64     488     25 Gbps     8×1.9TB NVMe       4.992
+
+i3en.6xlarge    24     192     25 Gbps     2×7.5TB NVMe       2.712
+i3en.12xlarge   48     384     50 Gbps     4×7.5TB NVMe       5.424
+i3en.24xlarge   96     768     100 Gbps    8×7.5TB NVMe      10.848
+
+WHEN TO USE i-series:
+  - Data size > 10 TB with multi-way joins (heavy shuffle spill)
+  - spark.local.dir benefits from massive local NVMe
+  - Shuffle data per node > 500 GB per stage
+
+═══════════════════════════════════════════════════════════════════════
+COMPUTE-OPTIMIZED (c-series) — For CPU-bound transformations
+═══════════════════════════════════════════════════════════════════════
+
+Instance       vCPUs  RAM(GB)  Network     Local SSD    $/hr(OD)
+─────────────  ─────  ───────  ──────────  ──────────   ────────
+c5.4xlarge      16      32     Up to 10G   EBS only      0.680
+c5.9xlarge      36      72     10 Gbps     EBS only      1.530
+c5.18xlarge     72     144     25 Gbps     EBS only      3.060
+
+WHEN TO USE c-series:
+  - Data fits mostly in memory (< 500 GB)
+  - CPU-heavy: parsing, regex extraction, ML feature engineering
+  - Low shuffle, low caching requirements
+  - CAUTION: only 2 GB/core → limited memory for joins/caching
+
+═══════════════════════════════════════════════════════════════════════
+GENERAL-PURPOSE (m-series) — Balanced / cost-sensitive
+═══════════════════════════════════════════════════════════════════════
+
+Instance       vCPUs  RAM(GB)  Network     Local SSD    $/hr(OD)
+─────────────  ─────  ───────  ──────────  ──────────   ────────
+m5.4xlarge      16      64     Up to 10G   EBS only      0.768
+m5.8xlarge      32     128     10 Gbps     EBS only      1.536
+m5.12xlarge     48     192     12 Gbps     EBS only      2.304
+m5.16xlarge     64     256     20 Gbps     EBS only      3.072
+
+m5d.4xlarge     16      64     Up to 10G   2×300GB NVMe  0.904
+m5d.8xlarge     32     128     10 Gbps     2×300GB NVMe  1.808
+
+WHEN TO USE m-series:
+  - Budget-constrained clusters
+  - Moderate joins, moderate caching (balanced workloads)
+  - 4 GB/core — less headroom than r-series but cheaper
+```
+
+### C. Instance Selection Formula — Any Data Size
+
+```
+FORMULA:
+  1. Determine workload_type:
+     ETL with joins/agg    → series = "r"  (8 GB/core)
+     CPU-heavy transforms  → series = "c"  (2 GB/core)
+     Shuffle-heavy (>10TB) → series = "i"  (local NVMe critical)
+     Budget-sensitive       → series = "m"  (4 GB/core)
+
+  2. Calculate minimum RAM per node:
+     min_RAM_per_node = max(
+       64,                                          # floor: 64 GB minimum for Spark
+       (D_GB × CR × SF × active_fraction) / nodes   # from workload
+     )
+
+  3. Select instance size:
+     IF min_RAM ≤ 32 GB  → r5.xlarge   (4 vCPU, 32 GB)   — small jobs
+     IF min_RAM ≤ 64 GB  → r5.2xlarge  (8 vCPU, 64 GB)   — medium jobs
+     IF min_RAM ≤ 128 GB → r5.4xlarge  (16 vCPU, 128 GB)  — large jobs (DEFAULT)
+     IF min_RAM ≤ 256 GB → r5.8xlarge  (32 vCPU, 256 GB)  — very large jobs
+     IF min_RAM ≤ 384 GB → r5.12xlarge (48 vCPU, 384 GB)  — massive jobs
+     IF min_RAM ≤ 768 GB → r5.24xlarge (96 vCPU, 768 GB)  — extreme jobs
+
+  4. Add local NVMe if:
+     shuffle_data_per_node_per_stage > 300 GB → use r5d or i3 variants
+     (avoids relying on EBS for shuffle, which adds latency)
+
+  5. Network bandwidth check:
+     IF nodes > 50 → need ≥ 10 Gbps dedicated (not "up to")
+     IF nodes > 100 → need ≥ 25 Gbps → use .12xlarge or larger
+```
+
+### D. Data Size → Instance Type Recommendation Table
+
+```
+┌───────────┬──────────────────────────────────────────────────────────────────────────────┐
+│ Data Size │ Recommended Instance & Cluster Configuration                                 │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.xlarge (4 vCPU, 32 GB)                                     │
+│ < 100 GB  │ Nodes:        2–3                                                            │
+│           │ Executors:    2–3 (1 per node, 3 cores each)                                 │
+│           │ Use case:     Dev/test, small batch ETL                                      │
+│           │ Alt:          m5.xlarge for budget savings                                   │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.2xlarge (8 vCPU, 64 GB)                                    │
+│ 100 GB –  │ Nodes:        3–5                                                            │
+│ 500 GB    │ Executors:    3–5 (1 per node, 5 cores each)                                 │
+│           │ Use case:     Daily batch ETL, dimension table processing                   │
+│           │ Alt:          r6gd.2xlarge (Graviton, 20% cheaper)                           │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.4xlarge (16 vCPU, 128 GB)                                  │
+│ 500 GB –  │ Nodes:        5–15                                                           │
+│ 2 TB      │ Executors:    15–45 (3 per node)                                             │
+│           │ Use case:     Production ETL, multi-table joins                              │
+│           │ Alt:          r5d.4xlarge if shuffle-heavy (adds 600 GB NVMe)                │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.4xlarge (16 vCPU, 128 GB) ← SWEET SPOT                    │
+│ 2 TB –    │ Nodes:        15–30                                                          │
+│ 5 TB      │ Executors:    45–90 (3 per node)                                             │
+│ (current) │ Use case:     Large-scale ETL, data lake processing                         │
+│           │ Alt:          r5d.4xlarge for shuffle-heavy workloads                        │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.8xlarge (32 vCPU, 256 GB)                                  │
+│ 5 TB –    │ Nodes:        25–50                                                          │
+│ 10 TB     │ Executors:    150–300 (6 per node)                                           │
+│           │ Use case:     Enterprise data warehouse, large fact tables                   │
+│           │ Alt:          i3.8xlarge if shuffle spill > 500 GB/node                      │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.8xlarge or r5.12xlarge (48 vCPU, 384 GB)                   │
+│ 10 TB –   │ Nodes:        50–100                                                         │
+│ 20 TB     │ Executors:    300–900 (6–9 per node)                                         │
+│           │ Use case:     Multi-petabyte lake, cross-dataset joins                       │
+│           │ Alt:          i3.8xlarge + r5.8xlarge mixed fleet                            │
+│           │ Network:      MUST use ≥ 10 Gbps dedicated instances                        │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.12xlarge or r5.24xlarge (96 vCPU, 768 GB)                  │
+│ 20 TB –   │ Nodes:        100–250                                                        │
+│ 50 TB     │ Executors:    900–2,250                                                      │
+│           │ Use case:     Massive aggregation, ML feature stores                         │
+│           │ Alt:          i3en.12xlarge (30 TB NVMe per node)                            │
+│           │ Network:      MUST use ≥ 25 Gbps instances                                  │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.24xlarge (96 vCPU, 768 GB) or i3en.24xlarge                │
+│ 50 TB –   │ Nodes:        250–500+                                                       │
+│ 100 TB    │ Executors:    2,250–4,500+                                                   │
+│           │ Use case:     Planet-scale analytics, log processing                         │
+│           │ Strategy:     Multi-job pipeline; partition data, process in stages           │
+│           │ Network:      MUST use 100 Gbps (i3en.24xlarge) or placement groups          │
+└───────────┴──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### E. Cost Estimation Formula
+
+```
+FORMULA:
+  hourly_cluster_cost = nodes × instance_hourly_rate
+  job_cost = hourly_cluster_cost × estimated_runtime_hours
+
+FOR 5 TB on r5.4xlarge:
+  On-Demand:  25 nodes × $1.008/hr = $25.20/hr
+  Spot (~70% savings): 25 nodes × $0.30/hr = $7.50/hr
+  EMR surcharge: +15% → On-Demand = $28.98/hr, Spot = $8.63/hr
+
+  Estimated runtime for 5 TB ETL: 1–3 hours
+  Job cost (Spot + EMR): $8.63 × 2 hrs = $17.26 per run
+
+QUICK COST TABLE:
+  ┌───────────┬────────────┬───────────────┬────────────────┬──────────────────┐
+  │ Data Size │ Instance   │ Nodes         │ $/hr (Spot+EMR)│ Est. Job Cost    │
+  ├───────────┼────────────┼───────────────┼────────────────┼──────────────────┤
+  │ 100 GB    │ r5.xlarge  │ 3             │ $0.28          │ $0.14  (30 min)  │
+  │ 500 GB    │ r5.2xlarge │ 5             │ $0.86          │ $0.72  (50 min)  │
+  │ 1 TB      │ r5.4xlarge │ 8             │ $2.76          │ $2.76  (1 hr)    │
+  │ 5 TB      │ r5.4xlarge │ 25            │ $8.63          │ $17.26 (2 hrs)   │
+  │ 10 TB     │ r5.8xlarge │ 45            │ $31.05         │ $93.15 (3 hrs)   │
+  │ 20 TB     │ r5.8xlarge │ 85            │ $58.65         │ $234.60 (4 hrs)  │
+  │ 50 TB     │ r5.12xlarge│ 200           │ $207.00        │ $1,035  (5 hrs)  │
+  │ 100 TB    │ r5.24xlarge│ 380           │ $787.32        │ $5,511  (7 hrs)  │
+  └───────────┴────────────┴───────────────┴────────────────┴──────────────────┘
+
+  NOTE: Spot prices fluctuate; estimates use ~70% discount from On-Demand.
+        EMR adds ~15% surcharge. Databricks adds ~30-50% DBU surcharge.
+```
+
+### F. EMR vs Databricks vs Dataproc — Platform Comparison
+
+```
+┌──────────────────┬─────────────────────┬─────────────────────┬─────────────────────┐
+│                  │ AWS EMR             │ Databricks (AWS)    │ GCP Dataproc        │
+├──────────────────┼─────────────────────┼─────────────────────┼─────────────────────┤
+│ Instance types   │ Any EC2 instance    │ Any EC2 instance    │ GCE machine types   │
+│ Surcharge        │ ~15% over EC2       │ ~30-50% DBU cost    │ ~40% cheaper than   │
+│                  │                     │                     │ equivalent EC2      │
+│ Spot/Preemptible │ Spot instances      │ Spot instances      │ Preemptible VMs     │
+│ Auto-scaling     │ EMR Managed Scaling │ Autoscale (built-in)│ Autoscaling policy  │
+│ Delta Lake       │ Manual setup        │ Native (optimized)  │ Manual setup        │
+│ Best for         │ Cost-sensitive,     │ Performance,        │ GCP-native,         │
+│                  │ YARN-based          │ collaborative       │ budget-friendly     │
+├──────────────────┼─────────────────────┼─────────────────────┼─────────────────────┤
+│ Equivalent       │ r5.4xlarge          │ r5.4xlarge          │ n2-highmem-16       │
+│ to 128 GB node   │ (16 vCPU, 128 GB)  │ (16 vCPU, 128 GB)  │ (16 vCPU, 128 GB)  │
+│                  │ $1.16/hr (w/ EMR)   │ $1.51/hr (w/ DBU)  │ $0.96/hr            │
+└──────────────────┴─────────────────────┴─────────────────────┴─────────────────────┘
+
+EQUIVALENT INSTANCES ACROSS CLOUDS:
+  AWS r5.4xlarge    ↔  GCP n2-highmem-16    ↔  Azure E16s_v5
+  AWS r5.8xlarge    ↔  GCP n2-highmem-32    ↔  Azure E32s_v5
+  AWS r5.12xlarge   ↔  GCP n2-highmem-48    ↔  Azure E48s_v5
+  AWS i3.8xlarge    ↔  GCP n2-standard-32 + local SSD  ↔  Azure L32s_v3
+```
+
+---
+
+## 30. Full Calculation Summary
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -724,6 +1314,10 @@ RULES:
 │  In-Memory Size ..................... 15 TB (3x compression ratio)           │
 │  Peak with Shuffle .................. 30 TB (2x shuffle factor)             │
 │  Node Type .......................... r5.4xlarge (16 cores, 128 GB)         │
+│  Instance Series ................... Memory-optimized (r-series, 8 GB/core)│
+│  Why r5.4xlarge .................... 128 GB fits 3 executors × 40 GB each  │
+│  Alt (shuffle-heavy) ............... r5d.4xlarge (adds 600 GB NVMe)        │
+│  Alt (budget) ...................... r6gd.4xlarge (Graviton, 20% cheaper)  │
 │                                                                             │
 │  CLUSTER                                                                    │
 │  ───────                                                                    │
@@ -756,14 +1350,32 @@ RULES:
 │  Driver Memory Overhead ............. 2 GB                                   │
 │  Max Result Size .................... 4 GB                                   │
 │                                                                             │
-│  PARALLELISM                                                                │
-│  ───────────                                                                │
+│  PARALLELISM & PARTITIONS                                                   │
+│  ────────────────────────                                                   │
 │  Total Executors .................... 75                                     │
 │  Total Cores ........................ 375                                    │
-│  Shuffle Partitions ................. 3,000                                  │
-│  Default Parallelism ................ 750                                    │
-│  Partition Size ..................... ~1.7 GB  (5 TB / 3000)               │
+│  Input Read Partitions .............. 40,960  (5 TB / 128 MB)              │
+│  Shuffle Partitions ................. 3,000   (with AQE; 30K theoretical)   │
+│  Default Parallelism (RDD) .......... 750     (375 cores × 2)              │
+│  Output Write Partitions ............ 2,000–10,000  (target 512 MB files)  │
+│  Data Layout Partitions ............. ~730    (year/month/day)              │
+│  Partition Size (shuffle) ........... ~1.7 GB  (5 TB / 3000)              │
+│  Memory Per Task Limit .............. 2.14 GB (10.7 GB / 5 cores)         │
 │  Broadcast Join Threshold ........... 256 MB                                │
+│                                                                             │
+│  AQE (ADAPTIVE QUERY EXECUTION)                                             │
+│  ──────────────────────────────                                             │
+│  Advisory Partition Size ............. 256 MB                                │
+│  Skew Join Threshold ................ 256 MB                                │
+│  Skew Join Factor ................... 5× median                             │
+│  Coalesce Min Partition Size ........ 64 MB                                 │
+│                                                                             │
+│  SHUFFLE BUFFER & REDUCER I/O                                               │
+│  ────────────────────────────                                               │
+│  Shuffle File Buffer ................ 1 MB    (32× fewer I/O syscalls)     │
+│  Reducer Max In Flight .............. 96 MB   (per reduce task)            │
+│  Shuffle Compress ................... true                                   │
+│  Spill Compress ..................... true                                   │
 │                                                                             │
 │  DYNAMIC ALLOCATION                                                         │
 │  ──────────────────                                                         │
@@ -790,7 +1402,7 @@ RULES:
 
 ---
 
-## 27. Final spark-submit Command
+## 31. Final spark-submit Command
 
 ```bash
 spark-submit \
@@ -821,7 +1433,7 @@ spark-submit \
   # ── Broadcast (Step 14) ──
   --conf spark.sql.autoBroadcastJoinThreshold=256MB \
   \
-  # ── Shuffle & Compression (Step 17, 23) ──
+  # ── Shuffle Buffer & I/O (Step 17, 23, 26) ──
   --conf spark.shuffle.compress=true \
   --conf spark.shuffle.spill.compress=true \
   --conf spark.shuffle.file.buffer=1m \
@@ -850,13 +1462,14 @@ spark-submit \
   --conf spark.speculation.multiplier=1.5 \
   --conf spark.speculation.quantile=0.75 \
   \
-  # ── AQE (Adaptive Query Execution) ──
+  # ── AQE (Adaptive Query Execution, Step 25) ──
   --conf spark.sql.adaptive.enabled=true \
   --conf spark.sql.adaptive.coalescePartitions.enabled=true \
+  --conf spark.sql.adaptive.coalescePartitions.minPartitionSize=64MB \
+  --conf spark.sql.adaptive.advisoryPartitionSizeInBytes=256MB \
   --conf spark.sql.adaptive.skewJoin.enabled=true \
   --conf spark.sql.adaptive.skewJoin.skewedPartitionFactor=5 \
   --conf spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes=256MB \
-  --conf spark.sql.adaptive.advisoryPartitionSizeInBytes=256MB \
   \
   # ── Dynamic Allocation (Step 21) ──
   --conf spark.dynamicAllocation.enabled=true \
@@ -877,7 +1490,7 @@ spark-submit \
 
 ---
 
-## 28. Scaling Formula: Any Data Size
+## 32. Scaling Formula: Any Data Size
 
 Replace `D` with your data size and recalculate every parameter:
 
@@ -888,6 +1501,15 @@ GIVEN:
   SF = shuffle factor (2 for ETL, 3 for heavy joins)
   M_node = RAM per node in GB
   C_node = cores per node
+
+SELECT INSTANCE:
+  IF D ≤ 0.5 TB  → r5.2xlarge  (8 vCPU, 64 GB,  M_node=64,  C_node=8)
+  IF D ≤ 2 TB    → r5.4xlarge  (16 vCPU, 128 GB, M_node=128, C_node=16)
+  IF D ≤ 10 TB   → r5.4xlarge  (16 vCPU, 128 GB, M_node=128, C_node=16) ← sweet spot
+  IF D ≤ 20 TB   → r5.8xlarge  (32 vCPU, 256 GB, M_node=256, C_node=32)
+  IF D ≤ 50 TB   → r5.12xlarge (48 vCPU, 384 GB, M_node=384, C_node=48)
+  IF D > 50 TB   → r5.24xlarge (96 vCPU, 768 GB, M_node=768, C_node=96)
+  Add "d" suffix (r5d) if shuffle_data_per_node > 300 GB (for local NVMe)
 
 CALCULATE:
   cores_per_executor     = 5  (constant)
@@ -902,29 +1524,35 @@ CALCULATE:
   driver_memory          = max(8, total_executors / 10)  in GB
   driver_overhead        = max(1, driver_memory × 0.10)
   max_result_size        = min(driver_memory × 0.4, 4)
+  input_read_partitions  = ceil((D × 1024) / 0.128)  in GB (128 MB maxPartitionBytes)
   shuffle_partitions     = max(total_cores × 4, (D × 1024) / 1)
   default_parallelism    = total_cores × 2
+  output_write_partitions= ceil((D × 1024) / 0.512)  (target 512 MB files)
   broadcast_threshold    = min(executor_memory × 0.15, 1)  in GB
+  advisory_partition_size= 256 MB  (AQE coalesce/split target, same as target_partition_size)
+  skew_threshold         = 256 MB  (AQE skew join split threshold)
+  shuffle_file_buffer    = 1 MB  (constant for multi-TB; 32 KB default for < 100 GB)
+  reducer_max_in_flight  = memory_per_task × 0.04 to 0.05  in MB
   network_timeout        = max(300, (D × 1024) / 31.25 × 3)  in seconds
 ```
 
 ### Quick Lookup Table
 
-| Data Size | Nodes (128GB) | Executors | Total Cores | Shuffle Partitions | Executor Mem |
-|-----------|---------------|-----------|-------------|--------------------|--------------|
-| 100 GB    | 3             | 9         | 45          | 200                | 36g          |
-| 500 GB    | 5             | 15        | 75          | 500                | 36g          |
-| 1 TB      | 8             | 24        | 120         | 1,000              | 36g          |
-| 2 TB      | 13            | 39        | 195         | 2,000              | 36g          |
-| 5 TB      | 25            | 75        | 375         | 3,000              | 36g          |
-| 10 TB     | 45            | 135       | 675         | 6,000              | 36g          |
-| 20 TB     | 85            | 255       | 1,275       | 10,000             | 36g          |
-| 50 TB     | 200           | 600       | 3,000       | 25,000             | 36g          |
-| 100 TB    | 380           | 1,140     | 5,700       | 50,000             | 36g          |
+| Data Size | Instance Type  | Nodes | Executors | Cores | Input Part. | Shuffle Part. | Output Part. | Exec Mem | Est. Cost/hr (Spot) |
+|-----------|----------------|-------|-----------|-------|-------------|---------------|--------------|----------|---------------------|
+| 100 GB    | r5.xlarge      | 3     | 3         | 9     | 800         | 200           | 200          | 24g      | $0.28               |
+| 500 GB    | r5.2xlarge     | 5     | 5         | 25    | 4,096       | 500           | 1,000        | 48g      | $0.86               |
+| 1 TB      | r5.4xlarge     | 8     | 24        | 120   | 8,192       | 1,000         | 2,000        | 36g      | $2.76               |
+| 2 TB      | r5.4xlarge     | 13    | 39        | 195   | 16,384      | 2,000         | 4,000        | 36g      | $4.49               |
+| 5 TB      | r5.4xlarge     | 25    | 75        | 375   | 40,960      | 3,000         | 10,000       | 36g      | $8.63               |
+| 10 TB     | r5.8xlarge     | 45    | 270       | 1,350 | 81,920      | 6,000         | 20,000       | 36g      | $31.05              |
+| 20 TB     | r5.8xlarge     | 85    | 510       | 2,550 | 163,840     | 10,000        | 40,000       | 36g      | $58.65              |
+| 50 TB     | r5.12xlarge    | 200   | 1,800     | 9,000 | 409,600     | 25,000        | 100,000      | 36g      | $207.00             |
+| 100 TB    | r5.24xlarge    | 380   | 7,220     | 36,100| 819,200     | 50,000        | 200,000      | 36g      | $787.32             |
 
 ---
 
-## 29. Verification Checklist
+## 33. Verification Checklist
 
 After calculating, verify every parameter passes these checks:
 
@@ -945,6 +1573,19 @@ PARTITION CHECKS:
   ☐ partition_size = D / shuffle_partitions ≤ memory_per_task (execution_memory / cores)
   ☐ partition_size ≥ 64 MB (avoid scheduling overhead)
   ☐ shuffle_partitions ≥ total_cores × 2 (enough work for all cores)
+  ☐ input_read_partitions = D / maxPartitionBytes (verify initial scan parallelism)
+  ☐ input_partition_in_memory = maxPartitionBytes × CR ≤ memory_per_task
+
+AQE CHECKS:
+  ☐ advisoryPartitionSizeInBytes ≤ memory_per_task (2.14 GB for this config)
+  ☐ skewedPartitionThresholdInBytes ≤ memory_per_task
+  ☐ skewedPartitionFactor ≥ 3 (too low = false positives; too high = misses real skew)
+  ☐ AQE coalesce enabled when shuffle_partitions is set high
+
+SHUFFLE I/O CHECKS:
+  ☐ shuffle_file_buffer ≥ 256 KB for multi-TB workloads (1 MB recommended)
+  ☐ reducer_max_in_flight × cores_per_executor ≤ execution_memory × 0.10
+  ☐ shuffle.compress = true (reduces network and disk I/O)
 
 NETWORK CHECKS:
   ☐ network_timeout ≥ 300s for multi-TB workloads

@@ -1,1106 +1,966 @@
-# Spark Distributed Hardware Configuration Framework
+# Spark Distributed Hardware Configuration - Calculation Framework
 
-> A practical guide for sizing and configuring Spark clusters to process **5 TB** of data.
-> Covers cluster sizing, memory tuning, shuffle optimization, and real-world configuration templates.
+> Step-by-step calculation worksheet to derive **every** Spark configuration parameter for processing **5 TB** of data.
+> Each value is computed from formulas - no magic numbers.
 
 ---
 
 ## TABLE OF CONTENTS
 
 ```
-01. Quick Reference: 5TB Cluster Sizing
-02. Core Concepts: Spark Resource Model
-03. Cluster Sizing Methodology
-04. Memory Configuration Deep Dive
-05. CPU & Parallelism Configuration
-06. Shuffle & Network Optimization
-07. Storage & I/O Configuration
-08. Configuration Templates by Workload Type
-09. Cloud Provider Sizing (AWS EMR / Azure HDInsight / GCP Dataproc)
-10. Dynamic Allocation & Auto-Scaling
-11. Monitoring & Tuning Checklist
-12. Common Configuration Mistakes
-13. Interview Questions & Answers
+01. Inputs & Assumptions
+02. STEP 1: Cores Per Executor
+03. STEP 2: Executors Per Node
+04. STEP 3: Executor Memory
+05. STEP 4: Executor Memory Overhead
+06. STEP 5: Number of Worker Nodes
+07. STEP 6: Total Executors Across Cluster
+08. STEP 7: Driver Memory
+09. STEP 8: Driver Memory Overhead
+10. STEP 9: Driver Max Result Size
+11. STEP 10: Memory Fractions (Execution / Storage / User)
+12. STEP 11: Off-Heap Memory
+13. STEP 12: Shuffle Partitions
+14. STEP 13: Default Parallelism
+15. STEP 14: Broadcast Join Threshold
+16. STEP 15: Partition Size Per Task
+17. STEP 16: Output File Count & Size
+18. STEP 17: Shuffle Disk (Local Storage)
+19. STEP 18: Network & Timeout Settings
+20. STEP 19: GC Tuning
+21. STEP 20: Serialization
+22. STEP 21: Dynamic Allocation Bounds
+23. STEP 22: Speculation Settings
+24. STEP 23: Compression Codec
+25. STEP 24: Data Partitioning (Write Layout)
+26. Full Calculation Summary
+27. Final spark-submit Command
+28. Scaling Formula: Any Data Size
+29. Verification Checklist
 ```
 
 ---
 
-## 1. Quick Reference: 5TB Cluster Sizing
-
-### Recommended Starting Configuration
+## 1. Inputs & Assumptions
 
 ```
-DATA SIZE:          5 TB (compressed on disk, ~15-20 TB uncompressed in memory)
-CLUSTER SIZE:       20-30 worker nodes
-INSTANCE TYPE:      Memory-optimized (e.g., r5.4xlarge / E16s_v3 / n2-highmem-16)
-CORES PER NODE:     16 vCPUs
-MEMORY PER NODE:    128 GB RAM
-TOTAL CLUSTER:      320-480 vCPUs, 2.5-3.8 TB RAM
-STORAGE PER NODE:   500 GB - 1 TB NVMe SSD (for shuffle/spill)
-```
-
-### Key Configuration Summary
-
-| Parameter                                  | Value             | Why                                   |
-|--------------------------------------------|-------------------|---------------------------------------|
-| `spark.executor.memory`                    | `90g`             | ~75% of node memory for executor      |
-| `spark.executor.cores`                     | `5`               | Sweet spot for HDFS throughput        |
-| `spark.executor.memoryOverhead`            | `10g`             | 10% of executor memory for off-heap   |
-| `spark.driver.memory`                      | `16g`             | Enough for collect/broadcast          |
-| `spark.sql.shuffle.partitions`             | `2000-4000`       | ~1-2 GB per shuffle partition         |
-| `spark.default.parallelism`                | `600-1500`        | 2-3x total cores                      |
-| `spark.sql.adaptive.enabled`               | `true`            | Auto-optimize at runtime              |
-| `spark.sql.adaptive.coalescePartitions.enabled` | `true`      | Reduce small partitions               |
-| `spark.serializer`                         | `org.apache.spark.serializer.KryoSerializer` | 10x faster than Java |
-| `spark.sql.parquet.filterPushdown`         | `true`            | Read only needed data                 |
-
----
-
-## 2. Core Concepts: Spark Resource Model
-
-### How Spark Uses Resources
-
-```
-CLUSTER
-├── DRIVER (1 node)
-│   ├── Coordinates job execution
-│   ├── Collects results
-│   └── Broadcasts small data
-│
-├── WORKER NODE 1
-│   ├── EXECUTOR 1 (JVM process)
-│   │   ├── Core 1 → Task (1 partition)
-│   │   ├── Core 2 → Task (1 partition)
-│   │   ├── ...
-│   │   ├── Core 5 → Task (1 partition)
-│   │   └── Memory
-│   │       ├── Execution Memory (shuffle, join, sort, aggregation)
-│   │       ├── Storage Memory (cached RDDs/DataFrames)
-│   │       └── User Memory (UDFs, data structures)
-│   └── EXECUTOR 2 (if multiple per node)
-│
-├── WORKER NODE 2
-│   └── ...
-└── WORKER NODE N
-```
-
-### Memory Layout Per Executor
-
-```
-Total Container Memory (e.g., 100g)
-├── spark.executor.memoryOverhead (10g) ← Off-heap: Python, JVM overhead, NIO buffers
-└── spark.executor.memory (90g) ← JVM Heap
-    ├── Reserved Memory (300 MB) ← Internal Spark bookkeeping
-    └── Usable Memory (89.7g)
-        ├── Unified Memory (60%) = ~54g
-        │   ├── Storage Memory ← Cached data (can borrow from execution)
-        │   └── Execution Memory ← Shuffles, joins, sorts (can evict storage)
-        └── User Memory (40%) = ~36g
-            └── User data structures, UDFs, metadata
-```
-
-### Key Formulas
-
-```
-Usable Memory = (spark.executor.memory - 300MB)
-Unified Memory = Usable Memory × spark.memory.fraction (default 0.6)
-Storage Memory = Unified Memory × spark.memory.storageFraction (default 0.5)
-Execution Memory = Unified Memory - Storage Memory (can borrow more)
-
-Total Parallelism = Number of Executors × Cores per Executor
-Ideal Partition Count = 2-4 × Total Parallelism
-Target Partition Size = 128 MB - 1 GB (for shuffle partitions)
+GIVEN:
+  Data Size on Disk (compressed Parquet) ............ D = 5 TB = 5,120 GB
+  Parquet Compression Ratio ......................... CR = 3x (typical Snappy)
+  Shuffle Expansion Factor .......................... SF = 2x (joins/aggregations)
+  Node Instance Type ................................ r5.4xlarge (AWS) or equivalent
+  vCPUs per Node .................................... C_node = 16
+  RAM per Node ...................................... M_node = 128 GB
+  Local SSD per Node ................................ S_node = 500 GB (NVMe)
+  OS + YARN/Hadoop Daemon Reserve per Node .......... OS_reserve = 1 core, 8 GB RAM
+  Available Cores per Node .......................... C_avail = C_node - 1 = 15
+  Available RAM per Node ............................ M_avail = M_node - OS_reserve = 120 GB
 ```
 
 ---
 
-## 3. Cluster Sizing Methodology
-
-### Step-by-Step Sizing for 5 TB
-
-#### Step 1: Estimate Data Expansion
+## 2. STEP 1: Cores Per Executor
 
 ```
-Raw Data on Disk:           5 TB (Parquet/ORC compressed)
-Compression Ratio:          3-4x (Parquet typical)
-Uncompressed in Memory:     15-20 TB
-Intermediate Data (shuffles): 1-3x of input (depending on operations)
-Peak Memory Needed:         ~20-40 TB total across all stages
+FORMULA:
+  cores_per_executor = 5
+
+WHY 5?
+  - HDFS I/O is optimized for 5 concurrent threads per JVM
+  - > 5 cores → diminishing HDFS throughput, excessive GC pressure
+  - < 3 cores → poor parallelism within executor
+  - 5 is the industry-standard sweet spot (validated by Cloudera, Databricks)
+
+CALCULATION:
+  cores_per_executor = 5 ✅
 ```
 
-#### Step 2: Choose Node Type
+**Config:** `spark.executor.cores = 5`
 
-| Workload Type     | Recommended Instance    | vCPUs | Memory | Use Case                    |
-|-------------------|-------------------------|-------|--------|-----------------------------|
-| ETL / Transforms  | r5.4xlarge (AWS)        | 16    | 128 GB | Joins, aggregations         |
-| Heavy Shuffle     | r5.8xlarge (AWS)        | 32    | 256 GB | Large joins, wide shuffles  |
-| ML / Iterative    | r5.4xlarge + GPU        | 16    | 128 GB | Training, feature eng       |
-| Cost-Optimized    | m5.4xlarge (AWS)        | 16    | 64 GB  | Simple ETL, light workloads |
+---
 
-#### Step 3: Calculate Number of Nodes
+## 3. STEP 2: Executors Per Node
 
 ```
-Formula:
-  Nodes = Peak Memory / (Memory per Node × Utilization Factor)
+FORMULA:
+  executors_per_node = floor(C_avail / cores_per_executor)
+  executors_per_node = floor(15 / 5)
+  executors_per_node = 3
 
-For 5 TB ETL with joins:
-  Peak Memory ≈ 20 TB (uncompressed + shuffle overhead)
-  Utilization Factor = 0.75 (executor gets ~75% of node memory)
-  Memory per Node = 128 GB
+BREAKDOWN:
+  Total cores per node ............ 16
+  Reserved for OS/YARN daemon ..... 1
+  Available for Spark ............. 15
+  Cores per executor .............. 5
+  Executors that fit .............. 15 / 5 = 3
 
-  Nodes = 20,000 GB / (128 GB × 0.75) = ~208 effective GB/node
-  Nodes = 20,000 / 96 = ~21 nodes
-
-  RECOMMENDATION: 20-30 worker nodes (start with 25, tune from there)
+VERIFY:
+  3 executors × 5 cores = 15 cores used
+  1 core left for OS/daemons ✅
 ```
 
-#### Step 4: Calculate Executors Per Node
+**Config:** _(derived, not a direct config - used in `spark.executor.instances`)_
+
+---
+
+## 4. STEP 3: Executor Memory
 
 ```
-OPTION A: Fat Executors (Recommended for 5TB)
-  Executors per Node:  2-3
-  Cores per Executor:  5
-  Memory per Executor: 40-55g
+FORMULA:
+  executor_memory = floor(M_avail / executors_per_node)
+  executor_memory = floor(120 GB / 3)
+  executor_memory = 40 GB
 
-OPTION B: Thin Executors (more parallelism)
-  Executors per Node:  5
-  Cores per Executor:  3
-  Memory per Executor: 20-24g
+BUT we need to subtract overhead (calculated in Step 4), so:
+  total_container_memory = floor(M_avail / executors_per_node) = 40 GB
+  executor_memory = total_container_memory - memory_overhead  (see Step 4)
 
-OPTION C: Single Executor Per Node (simplest)
-  Executors per Node:  1
-  Cores per Executor:  15 (leave 1 for OS)
-  Memory per Executor: 110g
+AFTER OVERHEAD SUBTRACTION:
+  executor_memory = 40 GB - 4 GB = 36 GB
 
-WHY 5 CORES PER EXECUTOR?
-  - HDFS has optimal throughput with 5 concurrent tasks per executor
-  - More than 5 cores → excessive GC pressure
-  - Fewer than 3 cores → low utilization
+VERIFY:
+  3 executors × 40 GB container = 120 GB ≤ 120 GB available ✅
+  Each JVM heap = 36 GB (manageable for G1GC) ✅
 ```
 
-#### Step 5: Set Partition Count
+**Config:** `spark.executor.memory = 36g`
+
+---
+
+## 5. STEP 4: Executor Memory Overhead
 
 ```
-Total Cores = 25 nodes × 3 executors × 5 cores = 375 cores
+FORMULA:
+  memory_overhead = max(384 MB, total_container_memory × 0.10)
+  memory_overhead = max(384 MB, 40 GB × 0.10)
+  memory_overhead = max(384 MB, 4 GB)
+  memory_overhead = 4 GB
 
-Shuffle Partitions:
-  Method 1: Based on data size
-    5 TB input → aim for 1 GB per shuffle partition → 5000 partitions
+WHAT OVERHEAD COVERS:
+  - Python process memory (PySpark)
+  - JVM internal overhead (thread stacks, class metadata)
+  - NIO direct buffers (network I/O)
+  - Container safety margin
 
-  Method 2: Based on cores
-    2-4x total cores → 750-1500 partitions
+VERIFY:
+  executor_memory + overhead = 36 GB + 4 GB = 40 GB = total_container_memory ✅
+```
 
-  RECOMMENDATION: Start with 2000, enable AQE to auto-tune
+**Config:** `spark.executor.memoryOverhead = 4g`
+
+---
+
+## 6. STEP 5: Number of Worker Nodes
+
+```
+FORMULA:
+  data_in_memory = D × CR = 5 TB × 3 = 15 TB = 15,360 GB
+  peak_memory = data_in_memory × SF = 15 TB × 2 = 30 TB = 30,720 GB
+
+  nodes_needed = ceil(peak_memory / M_avail)
+  nodes_needed = ceil(30,720 GB / 120 GB)
+  nodes_needed = ceil(256)
+  nodes_needed = 256  ← This is if ALL data must be in memory at once
+
+BUT Spark processes in stages (not all at once):
+  active_data_fraction = 0.10 to 0.30  (only 10-30% of data active at any time)
+  effective_memory_needed = peak_memory × active_data_fraction
+
+  CONSERVATIVE (30%): 30,720 × 0.30 = 9,216 GB → ceil(9,216 / 120) = 77 nodes
+  MODERATE (15%):     30,720 × 0.15 = 4,608 GB → ceil(4,608 / 120) = 39 nodes
+  OPTIMISTIC (10%):   30,720 × 0.10 = 3,072 GB → ceil(3,072 / 120) = 26 nodes
+
+RECOMMENDATION:
+  nodes = 25 worker nodes (start here, scale if spilling/OOM)
+
+VERIFY:
+  Total cluster RAM = 25 × 128 GB = 3,200 GB = 3.1 TB
+  Total usable RAM  = 25 × 120 GB = 3,000 GB = 2.9 TB
+  Data / Cluster RAM ratio = 5 TB / 3.1 TB = 1.6x ← acceptable for staged processing ✅
+```
+
+**Config:** _(determines cluster size at provisioning time)_
+
+---
+
+## 7. STEP 6: Total Executors Across Cluster
+
+```
+FORMULA:
+  total_executors = nodes × executors_per_node
+  total_executors = 25 × 3
+  total_executors = 75
+
+DERIVED:
+  total_cores = total_executors × cores_per_executor = 75 × 5 = 375 cores
+  total_executor_memory = total_executors × executor_memory = 75 × 36 GB = 2,700 GB
+
+VERIFY:
+  375 cores processing 5 TB → each core handles ~13.6 GB input ✅
+  2,700 GB total executor memory available ✅
+```
+
+**Config:** `spark.executor.instances = 75`
+_(or use dynamic allocation, see Step 21)_
+
+---
+
+## 8. STEP 7: Driver Memory
+
+```
+FORMULA:
+  driver_memory = max(
+    broadcast_data_size × 2,
+    max_collect_result_size × 2,
+    base_minimum (4 GB)
+  )
+
+CALCULATION:
+  Largest broadcast table .............. ~1 GB (estimated dimension table)
+  Max collect result ................... ~2 GB (summary data)
+  Metadata overhead .................... ~2 GB (job DAG, task tracking for 75 executors)
+
+  driver_memory = max(1 × 2, 2 × 2, 4)
+  driver_memory = max(2, 4, 4)
+  driver_memory = 8 GB  (minimum for 5 TB job)
+
+  RECOMMENDED: 8-16 GB (use 10 GB for safety)
+
+WHY NOT MORE?
+  - Driver doesn't process data
+  - Only coordinates and collects small results
+  - Large driver memory = wasted resources
+```
+
+**Config:** `spark.driver.memory = 10g`
+
+---
+
+## 9. STEP 8: Driver Memory Overhead
+
+```
+FORMULA:
+  driver_memory_overhead = max(384 MB, driver_memory × 0.10)
+  driver_memory_overhead = max(384 MB, 10 GB × 0.10)
+  driver_memory_overhead = max(384 MB, 1 GB)
+  driver_memory_overhead = 1 GB
+
+  RECOMMENDED: Round up to 2 GB for safety with large job graphs
+```
+
+**Config:** `spark.driver.memoryOverhead = 2g`
+
+---
+
+## 10. STEP 9: Driver Max Result Size
+
+```
+FORMULA:
+  max_result_size = min(driver_memory × 0.40, 4 GB)
+  max_result_size = min(10 × 0.40, 4)
+  max_result_size = min(4, 4)
+  max_result_size = 4 GB
+
+PURPOSE:
+  - Limits serialized result sent back to driver per action
+  - Prevents driver OOM from large collect() calls
+  - If exceeded → "Total size of serialized results is bigger than spark.driver.maxResultSize"
+```
+
+**Config:** `spark.driver.maxResultSize = 4g`
+
+---
+
+## 11. STEP 10: Memory Fractions (Execution / Storage / User)
+
+```
+EXECUTOR MEMORY LAYOUT:
+
+  executor_memory (JVM Heap) = 36 GB
+  ├── reserved_memory = 300 MB (fixed, Spark internal)
+  └── usable_memory = 36 GB - 300 MB = 35.7 GB
+
+FORMULA:
+  unified_memory = usable_memory × spark.memory.fraction
+  unified_memory = 35.7 GB × 0.6
+  unified_memory = 21.4 GB
+
+  storage_memory (initial) = unified_memory × spark.memory.storageFraction
+  storage_memory = 21.4 GB × 0.5
+  storage_memory = 10.7 GB     ← for cached DataFrames/RDDs
+
+  execution_memory (initial) = unified_memory - storage_memory
+  execution_memory = 21.4 GB - 10.7 GB
+  execution_memory = 10.7 GB   ← for shuffles, joins, sorts, aggregations
+
+  user_memory = usable_memory - unified_memory
+  user_memory = 35.7 GB - 21.4 GB
+  user_memory = 14.3 GB        ← for UDFs, metadata, user data structures
+
+FULL BREAKDOWN PER EXECUTOR:
+  ┌─────────────────────────────────────────────┐
+  │ Total Container: 40 GB                      │
+  ├─────────────────────────────────────────────┤
+  │ Memory Overhead (off-heap): 4 GB            │
+  ├─────────────────────────────────────────────┤
+  │ JVM Heap: 36 GB                             │
+  │ ├── Reserved: 0.3 GB                        │
+  │ ├── Unified Memory: 21.4 GB                 │
+  │ │   ├── Execution: 10.7 GB (shuffle/join)   │
+  │ │   └── Storage: 10.7 GB (cache)            │
+  │ └── User Memory: 14.3 GB (UDFs/metadata)    │
+  └─────────────────────────────────────────────┘
+
+WHEN TO ADJUST:
+  - Heavy caching needed → increase storageFraction to 0.7
+  - Heavy shuffles/joins → decrease storageFraction to 0.3
+  - Many UDFs → keep default (user memory stays at 40%)
+```
+
+**Config:**
+```
+spark.memory.fraction = 0.6
+spark.memory.storageFraction = 0.5
 ```
 
 ---
 
-## 4. Memory Configuration Deep Dive
+## 12. STEP 11: Off-Heap Memory
 
-### Executor Memory Settings
+```
+FORMULA:
+  offheap_size = executor_memory × 0.10 to 0.15  (for Tungsten optimized operations)
+  offheap_size = 36 GB × 0.10
+  offheap_size = 3.6 GB ≈ 4 GB
 
-```properties
-# Core memory settings
-spark.executor.memory=90g
-spark.executor.memoryOverhead=10g
+WHEN NEEDED:
+  - Large sort/merge operations
+  - Tungsten binary processing
+  - Reducing GC pressure on large heaps
 
-# Memory fractions
-spark.memory.fraction=0.6           # 60% for execution + storage
-spark.memory.storageFraction=0.5    # 50% of unified for storage (can be borrowed)
-
-# Off-heap memory (for Tungsten)
-spark.memory.offHeap.enabled=true
-spark.memory.offHeap.size=10g
+NOTE: This is INSIDE the memory_overhead (not additive to container)
 ```
 
-### When to Increase Memory
-
-| Symptom                           | Cause                          | Fix                                              |
-|-----------------------------------|--------------------------------|--------------------------------------------------|
-| `OutOfMemoryError: Java heap`     | Executor memory too small      | Increase `spark.executor.memory`                 |
-| `Container killed by YARN`        | Off-heap memory exceeded       | Increase `spark.executor.memoryOverhead`          |
-| `Spill to disk` in Spark UI      | Not enough execution memory    | Increase `spark.memory.fraction` or total memory |
-| Slow cache operations             | Storage memory too small       | Increase `spark.memory.storageFraction`           |
-| Driver OOM on `collect()`         | Too much data to driver        | Increase `spark.driver.memory` or avoid collect   |
-| GC pause > 10% of task time       | Heap too large for GC          | Reduce executor memory, add more executors        |
-
-### Driver Memory Settings
-
-```properties
-# Driver needs enough for:
-# - Broadcast variables
-# - collect() results
-# - Job metadata
-spark.driver.memory=16g
-spark.driver.memoryOverhead=4g
-spark.driver.maxResultSize=4g       # Max size of serialized results
+**Config:**
 ```
-
-### GC Tuning (For Large Heaps > 32g)
-
-```properties
-# Use G1GC for large heaps
-spark.executor.extraJavaOptions=-XX:+UseG1GC -XX:InitiatingHeapOccupancyPercent=35 -XX:G1HeapRegionSize=16m -XX:+ParallelRefProcEnabled
+spark.memory.offHeap.enabled = true
+spark.memory.offHeap.size = 4g
 ```
 
 ---
 
-## 5. CPU & Parallelism Configuration
+## 13. STEP 12: Shuffle Partitions
 
-### Core Settings
+```
+METHOD 1: Based on data size (primary method)
+  FORMULA:
+    shuffle_data = D × CR × shuffle_selectivity
+    shuffle_data = 5 TB × 3 × 0.5  (assume 50% of data survives filters before shuffle)
+    shuffle_data = 7.5 TB = 7,680 GB
 
-```properties
-# Executor cores
-spark.executor.cores=5              # 5 is the sweet spot
+    target_partition_size = 256 MB  (sweet spot: 128 MB - 1 GB)
+    shuffle_partitions = shuffle_data / target_partition_size
+    shuffle_partitions = 7,680 GB / 0.256 GB
+    shuffle_partitions = 30,000  ← upper bound
 
-# Total parallelism
-spark.default.parallelism=750       # For RDD operations (2x total cores)
-spark.sql.shuffle.partitions=2000   # For DataFrame/SQL operations
+  With AQE enabled, start higher and let Spark coalesce down.
 
-# Dynamic partition count (Spark 3.0+)
-spark.sql.adaptive.enabled=true
-spark.sql.adaptive.coalescePartitions.enabled=true
-spark.sql.adaptive.coalescePartitions.initialPartitionNum=4000
-spark.sql.adaptive.coalescePartitions.minPartitionSize=64MB
-spark.sql.adaptive.advisoryPartitionSizeInBytes=256MB
+METHOD 2: Based on total cores (secondary method)
+  FORMULA:
+    shuffle_partitions = total_cores × parallelism_multiplier
+    shuffle_partitions = 375 × 3 to 8
+    shuffle_partitions = 1,125 to 3,000
+
+METHOD 3: Balanced (recommended)
+  FORMULA:
+    shuffle_partitions = max(total_cores × 4, D_GB / target_partition_size_GB)
+    shuffle_partitions = max(375 × 4, 5120 / 1)
+    shuffle_partitions = max(1500, 5120)
+    shuffle_partitions = 5,120
+
+  RECOMMENDED: 2,000 - 5,000 with AQE enabled to auto-coalesce
+
+VERIFY:
+  5 TB / 2000 partitions = 2.56 GB per partition → acceptable for 36 GB executor ✅
+  5 TB / 5000 partitions = 1.02 GB per partition → optimal ✅
 ```
 
-### Partition Sizing Guide
+**Config:** `spark.sql.shuffle.partitions = 3000`
 
-| Data Size per Stage | Recommended Partitions | Target Partition Size |
-|---------------------|------------------------|-----------------------|
-| < 1 GB              | 8-20                   | 64-128 MB             |
-| 1-10 GB             | 20-200                 | 128-256 MB            |
-| 10-100 GB           | 200-1000               | 128-512 MB            |
-| 100 GB - 1 TB       | 1000-2000              | 256 MB - 1 GB         |
-| 1-5 TB              | 2000-5000              | 256 MB - 1 GB         |
-| 5-10 TB             | 5000-10000             | 512 MB - 1 GB         |
+---
 
-### Task Scheduling
+## 14. STEP 13: Default Parallelism
 
-```properties
-# Speculative execution (re-run slow tasks on other nodes)
-spark.speculation=true
-spark.speculation.interval=100ms
-spark.speculation.multiplier=1.5
-spark.speculation.quantile=0.75
+```
+FORMULA (for RDD operations):
+  default_parallelism = total_cores × 2 to 3
+  default_parallelism = 375 × 2
+  default_parallelism = 750
 
-# Task locality wait times
-spark.locality.wait=3s
-spark.locality.wait.node=3s
-spark.locality.wait.rack=3s
+NOTE:
+  - This applies to RDD operations (groupByKey, reduceByKey)
+  - DataFrame/SQL uses spark.sql.shuffle.partitions instead
+  - Set both for completeness
+```
+
+**Config:** `spark.default.parallelism = 750`
+
+---
+
+## 15. STEP 14: Broadcast Join Threshold
+
+```
+FORMULA:
+  broadcast_threshold = min(
+    executor_memory × 0.15,    (< 15% of executor memory)
+    driver_memory × 0.50,      (< 50% of driver memory, must fit in driver)
+    practical_limit             (network transfer time must be reasonable)
+  )
+
+CALCULATION:
+  executor_limit = 36 GB × 0.15 = 5.4 GB
+  driver_limit = 10 GB × 0.50 = 5 GB
+  practical_limit = 1 GB  (transfers quickly over network)
+
+  broadcast_threshold = min(5.4 GB, 5 GB, 1 GB)
+  broadcast_threshold = 1 GB
+
+  For 5 TB workloads, many dimension tables are 100 MB - 2 GB.
+  RECOMMENDED: 256 MB (conservative) to 1 GB (aggressive)
+
+WHY THIS MATTERS:
+  - Tables under this size → Broadcast Hash Join (fast, no shuffle)
+  - Tables over this size → Sort Merge Join (shuffle required)
+  - For 5 TB fact table joined with 500 MB dim table → broadcast the dim table
+```
+
+**Config:** `spark.sql.autoBroadcastJoinThreshold = 256MB`
+
+---
+
+## 16. STEP 15: Partition Size Per Task
+
+```
+FORMULA:
+  memory_per_task = execution_memory / cores_per_executor
+  memory_per_task = 10.7 GB / 5
+  memory_per_task = 2.14 GB
+
+  max_partition_size = memory_per_task × safety_factor
+  max_partition_size = 2.14 GB × 0.80
+  max_partition_size = 1.71 GB
+
+  RECOMMENDED target_partition_size = 256 MB to 1 GB
+  (well within the 1.71 GB limit per task)
+
+VERIFY:
+  With 3000 shuffle partitions:
+    partition_size = 5 TB / 3000 = 1.7 GB  → borderline, increase partitions or memory
+  With 5000 shuffle partitions:
+    partition_size = 5 TB / 5000 = 1.0 GB  → good ✅
+  With 3000 shuffle partitions (post-filter, 50% selectivity):
+    partition_size = 2.5 TB / 3000 = 0.85 GB → good ✅
 ```
 
 ---
 
-## 6. Shuffle & Network Optimization
-
-### Why Shuffle Matters for 5 TB
+## 17. STEP 16: Output File Count & Size
 
 ```
-Shuffle = redistribution of data across the network
-Every JOIN, GROUP BY, SORT triggers a shuffle
+FORMULA:
+  target_output_file_size = 256 MB to 1 GB (Parquet best practice)
+  output_data_size = result size after transformations
 
-For 5 TB data:
-  - A single wide join could shuffle 2-10 TB across the network
-  - Shuffle is the #1 bottleneck for large datasets
-  - Network bandwidth and disk I/O become critical
-```
+  If output ≈ 5 TB (similar size to input):
+    output_files = output_data_size / target_file_size
+    output_files = 5,120 GB / 0.512 GB
+    output_files = 10,000 files (at 512 MB each)
 
-### Shuffle Configuration
+  If output ≈ 500 GB (heavy aggregation):
+    output_files = 500 GB / 0.256 GB
+    output_files = ~2,000 files (at 256 MB each)
 
-```properties
-# Shuffle partitions (most important setting for large data)
-spark.sql.shuffle.partitions=2000
+REPARTITION BEFORE WRITE:
+  df.repartition(num_output_files).write.parquet(...)
 
-# Shuffle manager
-spark.shuffle.manager=sort                          # Default, use sort-based shuffle
-
-# Shuffle spill settings
-spark.shuffle.spill.compress=true                   # Compress spill files
-spark.shuffle.compress=true                         # Compress shuffle output
-
-# Shuffle service (external shuffle - prevents data loss on executor failure)
-spark.shuffle.service.enabled=true
-
-# Shuffle file buffer
-spark.shuffle.file.buffer=1m                        # Default 32k, increase for large shuffles
-spark.reducer.maxSizeInFlight=96m                   # Default 48m, controls fetch buffer size
-
-# Sort-merge join threshold
-spark.sql.autoBroadcastJoinThreshold=100MB          # Broadcast tables under 100MB (default 10MB)
-```
-
-### Adaptive Query Execution (AQE) - Spark 3.0+
-
-```properties
-# AQE automatically optimizes shuffle partitions at runtime
-spark.sql.adaptive.enabled=true
-spark.sql.adaptive.coalescePartitions.enabled=true
-spark.sql.adaptive.skewJoin.enabled=true
-spark.sql.adaptive.skewJoin.skewedPartitionFactor=5
-spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes=256MB
-spark.sql.adaptive.localShuffleReader.enabled=true
-```
-
-### Network Settings
-
-```properties
-# Network timeout (increase for large shuffles)
-spark.network.timeout=600s
-spark.rpc.askTimeout=600s
-spark.sql.broadcastTimeout=600s
-
-# Max retries for fetch failures
-spark.shuffle.io.maxRetries=10
-spark.shuffle.io.retryWait=30s
-```
-
-### Data Skew Handling
-
-```
-PROBLEM: One partition has 100x more data than others
-  - 99 tasks finish in 1 minute, 1 task takes 2 hours
-  - Overall job time = slowest task time
-
-SOLUTIONS:
-```
-
-```python
-# Solution 1: Salting (manual)
-# Add random prefix to skewed key to distribute it
-df_salted = df.withColumn("salt", F.concat(F.col("skewed_key"), F.lit("_"), (F.rand() * 10).cast("int")))
-# Join on salted key, then aggregate to remove salt
-
-# Solution 2: Enable AQE skew join handling (Spark 3.0+)
-# spark.sql.adaptive.skewJoin.enabled=true
-# Spark automatically splits skewed partitions
-
-# Solution 3: Broadcast join (if one side is small enough)
-from pyspark.sql.functions import broadcast
-result = large_df.join(broadcast(small_df), "key")
-
-# Solution 4: Two-phase aggregation
-# Phase 1: Partial aggregation with salted key
-df_partial = (df
-    .withColumn("salt", (F.rand() * 100).cast("int"))
-    .groupBy("key", "salt")
-    .agg(F.sum("value").alias("partial_sum"))
-)
-# Phase 2: Final aggregation without salt
-df_final = df_partial.groupBy("key").agg(F.sum("partial_sum").alias("total"))
+  OR let coalesce handle it:
+  df.coalesce(num_output_files).write.parquet(...)
 ```
 
 ---
 
-## 7. Storage & I/O Configuration
-
-### File Format Recommendations
-
-| Format  | Compression | Read Speed | Write Speed | Splittable | Use Case            |
-|---------|-------------|------------|-------------|------------|---------------------|
-| Parquet | Snappy      | Fast       | Fast        | Yes        | Default choice      |
-| Parquet | ZSTD        | Fast       | Medium      | Yes        | Better compression  |
-| ORC     | Zlib        | Fast       | Fast        | Yes        | Hive ecosystem      |
-| Delta   | Snappy      | Fast       | Fast        | Yes        | ACID + time travel  |
-| Avro    | Snappy      | Medium     | Fast        | Yes        | Schema evolution    |
-| CSV     | Gzip        | Slow       | Fast        | No         | Avoid for 5TB!      |
-| JSON    | Gzip        | Slow       | Fast        | No         | Avoid for 5TB!      |
-
-### Parquet Configuration
-
-```properties
-# Parquet read optimization
-spark.sql.parquet.filterPushdown=true           # Push filters to Parquet reader
-spark.sql.parquet.mergeSchema=false             # Don't merge schemas (faster)
-spark.sql.parquet.enableVectorizedReader=true   # Columnar batch reading
-
-# Parquet write optimization
-spark.sql.parquet.compression.codec=snappy      # snappy (fast) or zstd (smaller)
-spark.sql.parquet.writeLegacyFormat=false
-```
-
-### File Size & Partitioning
-
-```python
-# Optimal file sizes for 5 TB
-# Target: 128 MB - 1 GB per file (Parquet)
-
-# Writing with optimal file sizes
-df.repartition(5000) \
-  .write \
-  .partitionBy("year", "month") \
-  .parquet("s3://bucket/output/")
-
-# Coalesce to reduce small files
-df.coalesce(5000) \
-  .write \
-  .mode("overwrite") \
-  .parquet("s3://bucket/output/")
-```
-
-### Partition Strategy for 5 TB
+## 18. STEP 17: Shuffle Disk (Local Storage)
 
 ```
-DATA: 5 TB of event data (2 years, 50 event types)
+FORMULA:
+  shuffle_data_per_node = (D × CR × SF) / nodes
+  shuffle_data_per_node = (5 TB × 3 × 2) / 25
+  shuffle_data_per_node = 30 TB / 25
+  shuffle_data_per_node = 1.2 TB  ← worst case (all data shuffled)
 
-GOOD partition scheme:
-  /data/year=2024/month=01/day=01/  → ~7 GB per day
-  Total partitions: ~730 (2 years × 365 days)
-  Files per partition: 5-10 (1 GB each)
+  With compression (shuffle.compress = true, ~2x reduction):
+    shuffle_disk_per_node = 1.2 TB / 2 = 600 GB
 
-BAD partition scheme (over-partitioned):
-  /data/year=2024/month=01/day=01/hour=00/event_type=click/
-  Total partitions: 730 × 24 × 50 = 876,000
-  Files per partition: 1-5 KB each → TOO MANY SMALL FILES!
+  Safety margin (1.5x):
+    required_local_disk = 600 GB × 1.5 = 900 GB
 
-RULE OF THUMB:
-  - Partition on columns used in WHERE clauses
-  - Aim for 100 MB - 1 GB per partition
-  - Total partitions: 1,000 - 50,000 for 5 TB
-  - Avoid high-cardinality partition keys (user_id, transaction_id)
+  RECOMMENDED: 500 GB - 1 TB NVMe SSD per node
+
+NOTE: Not all data is shuffled at once. Spark processes in stages.
+  Realistic shuffle per node per stage = 100-300 GB
+  500 GB NVMe is sufficient for most workloads ✅
 ```
 
-### Local Storage for Shuffle
+**Config:** `spark.local.dir = /mnt/nvme1,/mnt/nvme2`
 
-```properties
-# Use NVMe SSDs for shuffle spill (critical for 5 TB workloads)
-spark.local.dir=/mnt/nvme1,/mnt/nvme2   # Multiple disks for parallel I/O
+---
 
-# Disk I/O settings
-spark.shuffle.file.buffer=1m
-spark.unsafe.sorter.spill.reader.buffer.size=1m
-spark.storage.memoryMapThreshold=2m
+## 19. STEP 18: Network & Timeout Settings
+
+```
+FORMULA:
+  shuffle_transfer_time = largest_shuffle_stage / network_bandwidth
+  largest_shuffle_stage = 5 TB (worst case: full data shuffle)
+  network_bandwidth = 10 Gbps per node × 25 nodes = 250 Gbps cluster bisection
+
+  transfer_time = 5 TB / (250 Gbps / 8) = 5,120 GB / 31.25 GB/s = 164 seconds
+
+  timeout = transfer_time × safety_multiplier
+  timeout = 164 × 3 = 492 seconds ≈ 600 seconds (10 minutes)
+
+CALCULATION:
+  network_timeout = 600s
+  rpc_timeout = 600s
+  broadcast_timeout = 600s
+  shuffle_io_retries = 10  (for transient network failures)
+  shuffle_io_retry_wait = 30s
+```
+
+**Config:**
+```
+spark.network.timeout = 600s
+spark.rpc.askTimeout = 600s
+spark.sql.broadcastTimeout = 600s
+spark.shuffle.io.maxRetries = 10
+spark.shuffle.io.retryWait = 30s
 ```
 
 ---
 
-## 8. Configuration Templates by Workload Type
+## 20. STEP 19: GC Tuning
 
-### Template 1: ETL / Data Transformation (5 TB)
+```
+DECISION:
+  IF executor_memory > 32 GB → Use G1GC
+  IF executor_memory ≤ 32 GB → Default (Parallel GC) is fine
 
-```properties
-# Cluster: 25 nodes × r5.4xlarge (16 vCPUs, 128 GB)
-# Use case: Read 5 TB Parquet, transform, write back
+  executor_memory = 36 GB > 32 GB → Use G1GC ✅
 
-spark.master=yarn
-spark.submit.deployMode=cluster
-
-# Executor settings
-spark.executor.instances=50
-spark.executor.cores=5
-spark.executor.memory=50g
-spark.executor.memoryOverhead=6g
-
-# Driver settings
-spark.driver.memory=16g
-spark.driver.memoryOverhead=4g
-spark.driver.maxResultSize=4g
-
-# Parallelism
-spark.default.parallelism=500
-spark.sql.shuffle.partitions=2000
-
-# AQE
-spark.sql.adaptive.enabled=true
-spark.sql.adaptive.coalescePartitions.enabled=true
-spark.sql.adaptive.skewJoin.enabled=true
-
-# Serialization
-spark.serializer=org.apache.spark.serializer.KryoSerializer
-
-# I/O
-spark.sql.parquet.filterPushdown=true
-spark.sql.parquet.mergeSchema=false
-
-# Shuffle
-spark.shuffle.compress=true
-spark.shuffle.spill.compress=true
-spark.sql.autoBroadcastJoinThreshold=100MB
-
-# Network
-spark.network.timeout=600s
+G1GC SETTINGS:
+  InitiatingHeapOccupancyPercent = 35  (start GC earlier to avoid long pauses)
+  G1HeapRegionSize = 16m  (for heaps 32-64 GB; use 32m for > 64 GB)
+  ParallelRefProcEnabled = true  (parallel reference processing)
 ```
 
-### Template 2: Heavy Join Workload (5 TB × 2 TB)
-
-```properties
-# Cluster: 30 nodes × r5.8xlarge (32 vCPUs, 256 GB)
-# Use case: Join 5 TB fact table with 2 TB dimension table
-
-spark.executor.instances=60
-spark.executor.cores=5
-spark.executor.memory=100g
-spark.executor.memoryOverhead=15g
-
-spark.driver.memory=32g
-spark.driver.memoryOverhead=8g
-
-# More shuffle partitions for large joins
-spark.sql.shuffle.partitions=4000
-spark.default.parallelism=1200
-
-# AQE for skew handling
-spark.sql.adaptive.enabled=true
-spark.sql.adaptive.skewJoin.enabled=true
-spark.sql.adaptive.skewJoin.skewedPartitionFactor=5
-spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes=512MB
-
-# Larger broadcast threshold (if dimension table fits)
-spark.sql.autoBroadcastJoinThreshold=2g
-
-# Shuffle optimization
-spark.shuffle.file.buffer=1m
-spark.reducer.maxSizeInFlight=96m
-spark.shuffle.io.maxRetries=10
-spark.shuffle.io.retryWait=60s
-
-# Extended timeouts for large shuffles
-spark.network.timeout=800s
-spark.sql.broadcastTimeout=600s
-
-# Sort-merge join tuning
-spark.sql.join.preferSortMergeJoin=true
+**Config:**
 ```
-
-### Template 3: Aggregation Heavy (5 TB → Summary)
-
-```properties
-# Cluster: 20 nodes × r5.4xlarge (16 vCPUs, 128 GB)
-# Use case: Aggregate 5 TB into summary tables
-
-spark.executor.instances=40
-spark.executor.cores=5
-spark.executor.memory=50g
-spark.executor.memoryOverhead=6g
-
-spark.driver.memory=16g
-
-# Moderate shuffle partitions
-spark.sql.shuffle.partitions=1500
-spark.default.parallelism=400
-
-# AQE for partition coalescing (aggregation reduces data)
-spark.sql.adaptive.enabled=true
-spark.sql.adaptive.coalescePartitions.enabled=true
-spark.sql.adaptive.advisoryPartitionSizeInBytes=256MB
-
-# Serialization
-spark.serializer=org.apache.spark.serializer.KryoSerializer
-
-# Filter pushdown (aggregate queries often filter first)
-spark.sql.parquet.filterPushdown=true
-
-# Off-heap for large aggregation buffers
-spark.memory.offHeap.enabled=true
-spark.memory.offHeap.size=8g
-```
-
-### Template 4: Streaming Micro-Batch (Continuous 5 TB/day)
-
-```properties
-# Cluster: 15 nodes × r5.4xlarge (16 vCPUs, 128 GB)
-# Use case: Process ~5 TB/day in micro-batches (Structured Streaming)
-
-spark.executor.instances=30
-spark.executor.cores=5
-spark.executor.memory=40g
-spark.executor.memoryOverhead=5g
-
-spark.driver.memory=8g
-
-# Smaller shuffle partitions (micro-batches are smaller)
-spark.sql.shuffle.partitions=200
-spark.default.parallelism=300
-
-# Streaming-specific
-spark.streaming.backpressure.enabled=true
-spark.streaming.kafka.maxRatePerPartition=10000
-spark.sql.streaming.stateStore.maintenanceInterval=30s
-
-# Checkpointing
-spark.sql.streaming.checkpointLocation=s3://bucket/checkpoints/
-
-# Graceful shutdown
-spark.streaming.stopGracefullyOnShutdown=true
+spark.executor.extraJavaOptions = -XX:+UseG1GC -XX:InitiatingHeapOccupancyPercent=35 -XX:G1HeapRegionSize=16m -XX:+ParallelRefProcEnabled
 ```
 
 ---
 
-## 9. Cloud Provider Sizing (AWS EMR / Azure HDInsight / GCP Dataproc)
-
-### AWS EMR Configuration
+## 21. STEP 20: Serialization
 
 ```
-CLUSTER:
-  Master:  1 × m5.2xlarge (8 vCPU, 32 GB)
-  Core:    20 × r5.4xlarge (16 vCPU, 128 GB)
-  Task:    5-10 × r5.4xlarge (spot instances for cost savings)
+DECISION:
+  Java serialization → slow, large (default)
+  Kryo serialization → 10x faster, 2-5x smaller
 
-STORAGE:
-  Input/Output: S3 (s3a://)
-  Shuffle:      Instance store NVMe (i3.4xlarge) or EBS gp3
+  For 5 TB workloads → ALWAYS use Kryo
 
-EMR-SPECIFIC SETTINGS:
-  spark.hadoop.fs.s3a.connection.maximum=200
-  spark.hadoop.fs.s3a.fast.upload=true
-  spark.hadoop.fs.s3a.fast.upload.buffer=bytebuffer
-  spark.hadoop.fs.s3a.multipart.size=104857600
-  spark.hadoop.fs.s3a.connection.timeout=200000
-
-COST ESTIMATE (on-demand):
-  ~$25-40/hour for the cluster
-  ~$200-320 for an 8-hour processing job
-  Use spot instances for task nodes → save 60-70%
+CALCULATION (impact on shuffle):
+  Java serialized shuffle size ≈ 5 TB
+  Kryo serialized shuffle size ≈ 5 TB / 3 ≈ 1.7 TB
+  Savings: ~3.3 TB less data shuffled across the network
 ```
 
-### Azure HDInsight / Databricks
-
+**Config:**
 ```
-CLUSTER:
-  Head:    2 × D14_v2 (16 vCPU, 112 GB)
-  Worker:  20 × E16s_v3 (16 vCPU, 128 GB)
-
-STORAGE:
-  Input/Output: ADLS Gen2 (abfss://)
-  Shuffle:      Premium SSD managed disks
-
-AZURE-SPECIFIC:
-  spark.hadoop.fs.azure.account.key.<account>.dfs.core.windows.net=<key>
-  spark.hadoop.fs.azure.createRemoteFileSystemDuringInitialization=false
-```
-
-### GCP Dataproc
-
-```
-CLUSTER:
-  Master:  1 × n2-highmem-8 (8 vCPU, 64 GB)
-  Worker:  20 × n2-highmem-16 (16 vCPU, 128 GB)
-
-STORAGE:
-  Input/Output: GCS (gs://)
-  Shuffle:      Local SSDs attached to worker nodes
-
-GCP-SPECIFIC:
-  spark.hadoop.google.cloud.auth.service.account.enable=true
-  spark.hadoop.fs.gs.impl=com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem
-```
-
-### Cost Comparison (Approximate for 5 TB ETL)
-
-| Provider       | Instance Type     | Nodes | $/hour   | 8-hr Job Cost | Spot/Preemptible |
-|----------------|-------------------|-------|----------|---------------|------------------|
-| AWS EMR        | r5.4xlarge        | 25    | ~$30     | ~$240         | ~$90             |
-| Azure Databricks | E16s_v3         | 25    | ~$35     | ~$280         | ~$100            |
-| GCP Dataproc   | n2-highmem-16     | 25    | ~$28     | ~$224         | ~$80             |
-
----
-
-## 10. Dynamic Allocation & Auto-Scaling
-
-### Dynamic Allocation Configuration
-
-```properties
-# Let Spark request/release executors based on workload
-spark.dynamicAllocation.enabled=true
-spark.dynamicAllocation.minExecutors=10
-spark.dynamicAllocation.maxExecutors=100
-spark.dynamicAllocation.initialExecutors=25
-
-# When to scale up (pending tasks)
-spark.dynamicAllocation.schedulerBacklogTimeout=5s
-
-# When to scale down (idle executors)
-spark.dynamicAllocation.executorIdleTimeout=120s
-spark.dynamicAllocation.cachedExecutorIdleTimeout=600s
-
-# Required: external shuffle service
-spark.shuffle.service.enabled=true
-```
-
-### When to Use Dynamic vs Fixed Allocation
-
-| Scenario                           | Fixed Allocation    | Dynamic Allocation   |
-|------------------------------------|---------------------|----------------------|
-| Predictable, steady workload       | Recommended         | OK                   |
-| Variable stages (read → join → agg)| OK                  | Recommended          |
-| Cost optimization                  | Less optimal        | Recommended          |
-| Multi-tenant cluster               | Required per job    | Recommended          |
-| Streaming workload                 | Recommended         | Not recommended      |
-| Ad-hoc / interactive queries       | Less optimal        | Recommended          |
-
----
-
-## 11. Monitoring & Tuning Checklist
-
-### Spark UI Metrics to Watch
-
-```
-STAGE VIEW:
-  ✅ Check: Task duration distribution (should be uniform)
-  ⚠️ Red flag: One task takes 10x longer than others → DATA SKEW
-
-STORAGE VIEW:
-  ✅ Check: Cached data fraction and eviction count
-  ⚠️ Red flag: High eviction count → increase storage memory
-
-EXECUTORS VIEW:
-  ✅ Check: GC time (should be < 10% of task time)
-  ⚠️ Red flag: GC time > 20% → reduce executor memory or tune GC
-
-SQL VIEW:
-  ✅ Check: Physical plan (joins, exchanges)
-  ⚠️ Red flag: BroadcastNestedLoopJoin → missing join condition
-  ⚠️ Red flag: SortMergeJoin on small table → enable broadcast
-
-ENVIRONMENT VIEW:
-  ✅ Check: All configurations are applied
-  ⚠️ Red flag: Default values on critical settings
-```
-
-### Tuning Decision Tree
-
-```
-JOB IS SLOW?
-│
-├── Are tasks evenly distributed?
-│   ├── NO → DATA SKEW
-│   │   ├── Enable AQE skew join
-│   │   ├── Salt the skewed key
-│   │   └── Use broadcast join if one side is small
-│   └── YES → continue
-│
-├── Is GC time > 10%?
-│   ├── YES → MEMORY PRESSURE
-│   │   ├── Reduce executor memory (smaller heap = less GC)
-│   │   ├── Add more executors instead
-│   │   └── Enable off-heap memory
-│   └── NO → continue
-│
-├── Are tasks spilling to disk?
-│   ├── YES → NOT ENOUGH EXECUTION MEMORY
-│   │   ├── Increase spark.executor.memory
-│   │   ├── Increase spark.memory.fraction
-│   │   └── Reduce partition count (larger partitions = more memory per task)
-│   └── NO → continue
-│
-├── Are there many small tasks (< 10ms)?
-│   ├── YES → TOO MANY PARTITIONS
-│   │   ├── Reduce spark.sql.shuffle.partitions
-│   │   ├── Enable AQE coalescing
-│   │   └── Use coalesce() before write
-│   └── NO → continue
-│
-├── Are shuffle read/write sizes very large?
-│   ├── YES → SHUFFLE BOTTLENECK
-│   │   ├── Filter earlier in the pipeline
-│   │   ├── Use broadcast join where possible
-│   │   ├── Increase spark.reducer.maxSizeInFlight
-│   │   └── Add more NVMe storage for shuffle
-│   └── NO → continue
-│
-└── Is I/O wait time high?
-    ├── YES → STORAGE BOTTLENECK
-    │   ├── Use Parquet/ORC instead of CSV/JSON
-    │   ├── Enable filter pushdown
-    │   ├── Partition data on commonly filtered columns
-    │   └── Use column pruning (select only needed columns)
-    └── NO → Profile further with Spark event logs
-```
-
-### Key Metrics for 5 TB Jobs
-
-| Metric                    | Healthy Range      | Action if Outside            |
-|---------------------------|--------------------|------------------------------|
-| Task duration uniformity  | < 2x median        | Fix data skew                |
-| GC time per executor      | < 10% of task time | Tune memory/GC               |
-| Shuffle spill to disk     | 0 (ideally)        | Increase execution memory    |
-| Shuffle read/write ratio  | ~ 1:1              | Check for data explosion     |
-| Executor utilization      | > 70%              | Reduce idle executors        |
-| Stage completion time     | < 30 min/stage     | Check for stragglers/skew    |
-| Failed tasks              | < 1%               | Check OOM, network issues    |
-
----
-
-## 12. Common Configuration Mistakes
-
-### Mistake 1: Default Shuffle Partitions (200)
-
-```properties
-# ❌ BAD: Default value for 5 TB
-spark.sql.shuffle.partitions=200    # Only 200 partitions for 5 TB!
-# Result: Each partition = 25 GB → OOM / extreme spill
-
-# ✅ GOOD: Sized for 5 TB
-spark.sql.shuffle.partitions=2000   # Each partition ≈ 2.5 GB
-# Or enable AQE to auto-tune
-spark.sql.adaptive.enabled=true
-```
-
-### Mistake 2: Too Many Cores Per Executor
-
-```properties
-# ❌ BAD: All cores in one executor
-spark.executor.cores=16    # 16 cores sharing one JVM
-spark.executor.memory=110g # One big executor
-# Result: Excessive GC, poor HDFS throughput
-
-# ✅ GOOD: Optimal core count
-spark.executor.cores=5     # Sweet spot for HDFS
-spark.executor.memory=50g  # Manageable heap
-```
-
-### Mistake 3: Ignoring Memory Overhead
-
-```properties
-# ❌ BAD: No overhead specified (uses default 10% or 384MB min)
-spark.executor.memory=120g
-# spark.executor.memoryOverhead=???  (defaults to max(384MB, 0.10 * 120g) = 12g)
-# Container = 120g + 12g = 132g → might exceed node capacity!
-
-# ✅ GOOD: Explicit overhead
-spark.executor.memory=90g
-spark.executor.memoryOverhead=10g
-# Container = 90g + 10g = 100g → predictable sizing
-```
-
-### Mistake 4: Not Using AQE (Spark 3.0+)
-
-```properties
-# ❌ BAD: Manual tuning without AQE
-spark.sql.shuffle.partitions=5000   # Fixed, may be too many or too few
-
-# ✅ GOOD: Enable AQE for automatic optimization
-spark.sql.adaptive.enabled=true
-spark.sql.adaptive.coalescePartitions.enabled=true
-spark.sql.adaptive.skewJoin.enabled=true
-```
-
-### Mistake 5: Broadcasting Large Tables
-
-```properties
-# ❌ BAD: Broadcasting a 5 GB table (OOM risk on driver)
-spark.sql.autoBroadcastJoinThreshold=5g
-
-# ✅ GOOD: Conservative broadcast threshold
-spark.sql.autoBroadcastJoinThreshold=100MB
-# Only broadcast genuinely small lookup tables
-```
-
-### Mistake 6: Using CSV/JSON for 5 TB
-
-```python
-# ❌ BAD: CSV for 5 TB (not splittable, no column pruning, no pushdown)
-df = spark.read.csv("s3://bucket/5tb_data.csv.gz")
-
-# ✅ GOOD: Parquet with partitioning
-df = spark.read.parquet("s3://bucket/5tb_data/")
-# Benefits: columnar, compressed, splittable, filter pushdown
-```
-
-### Mistake 7: collect() on Large Results
-
-```python
-# ❌ BAD: Collecting 5 TB to driver
-all_data = df.collect()  # Driver OOM guaranteed!
-
-# ✅ GOOD: Write to storage
-df.write.parquet("s3://bucket/output/")
-
-# Or aggregate first
-summary = df.groupBy("key").agg(F.sum("value")).collect()
+spark.serializer = org.apache.spark.serializer.KryoSerializer
+spark.kryoserializer.buffer.max = 1024m
 ```
 
 ---
 
-## 13. Interview Questions & Answers
-
-### Q1: How would you size a Spark cluster for 5 TB of data?
-
-**Answer Framework:**
-```
-1. ESTIMATE DATA EXPANSION
-   - 5 TB compressed → ~15-20 TB in memory
-   - Add 1-3x for shuffle overhead → ~30 TB peak
-
-2. CHOOSE NODE TYPE
-   - Memory-optimized: r5.4xlarge (16 vCPU, 128 GB)
-   - Need: 30 TB / (128 GB × 0.75 utilization) ≈ 25 nodes
-
-3. CONFIGURE EXECUTORS
-   - 5 cores per executor (HDFS sweet spot)
-   - 2-3 executors per node
-   - ~50g memory per executor
-
-4. SET PARALLELISM
-   - spark.sql.shuffle.partitions = 2000-4000
-   - Enable AQE for auto-tuning
-
-5. OPTIMIZE
-   - Parquet format with filter pushdown
-   - Broadcast small dimension tables
-   - NVMe SSDs for shuffle spill
-```
-
-### Q2: What happens if shuffle partitions are too few/many?
+## 22. STEP 21: Dynamic Allocation Bounds
 
 ```
-TOO FEW (e.g., 200 for 5 TB):
-  - Each partition = 25 GB → doesn't fit in memory
-  - Excessive spill to disk → slow
-  - OOM errors on executors
-  - One slow partition blocks the entire stage
+FORMULA:
+  min_executors = total_executors × 0.10 to 0.20  (keep minimum warm)
+  min_executors = 75 × 0.15 = 11 ≈ 10
 
-TOO MANY (e.g., 100,000 for 5 TB):
-  - Each partition = 50 MB → very small
-  - Overhead of scheduling 100K tasks
-  - Too many small files on write
-  - Network overhead from shuffle metadata
+  max_executors = total_executors × 1.5 to 2.0  (allow burst)
+  max_executors = 75 × 1.5 = 112 ≈ 100
 
-JUST RIGHT (2000-5000 for 5 TB):
-  - Each partition = 1-2.5 GB → fits in memory
-  - Good parallelism
-  - Reasonable file sizes on write
+  initial_executors = total_executors × 0.30 to 0.50
+  initial_executors = 75 × 0.40 = 30
+
+IDLE TIMEOUT:
+  executor_idle_timeout = 120s  (release idle executors after 2 minutes)
+  cached_executor_idle_timeout = 600s  (keep executors with cached data longer)
+  scheduler_backlog_timeout = 5s  (request new executors within 5s of pending tasks)
 ```
 
-### Q3: How do you handle data skew in a 5 TB join?
-
+**Config:**
 ```
-DETECT:
-  - Spark UI shows one task taking 10x+ longer
-  - Shuffle read size for one partition >> median
-
-SOLUTIONS (in order of preference):
-  1. AQE Skew Join (Spark 3.0+): Auto-splits skewed partitions
-  2. Broadcast Join: If one side < 1-2 GB
-  3. Salting: Add random prefix to skewed key, join, then aggregate
-  4. Two-Phase Aggregation: Pre-aggregate with salt, then final aggregate
-  5. Filter + Union: Process skewed keys separately
-  6. Bucket Tables: Pre-sort and bucket on join key (Hive tables)
-```
-
-### Q4: Why 5 cores per executor?
-
-```
-HDFS THROUGHPUT:
-  - HDFS client is optimized for ~5 concurrent threads
-  - More than 5 → diminishing returns, increased contention
-
-GC PRESSURE:
-  - More cores per executor → more concurrent tasks → more objects
-  - More objects → more GC pauses → longer stop-the-world events
-
-MEMORY SHARING:
-  - 5 tasks share one executor's memory
-  - Each task gets ~memory/5 for execution
-  - Balance between parallelism and per-task memory
-
-EXCEPTION:
-  - If tasks are CPU-bound (ML training), 3-4 cores might be better
-  - If tasks are memory-heavy (wide joins), 3 cores with more memory
-```
-
-### Q5: Explain Spark's Unified Memory Model
-
-```
-JVM Heap (spark.executor.memory)
-├── Reserved Memory (300 MB)
-└── Usable Memory
-    ├── Unified Memory Pool (spark.memory.fraction × usable)
-    │   ├── Storage Memory (cached data)
-    │   │   └── Can be evicted if execution needs more
-    │   └── Execution Memory (shuffles, joins, sorts)
-    │       └── Cannot be evicted by storage
-    └── User Memory (remaining)
-        └── Internal metadata, UDFs, user data structures
-
-KEY INSIGHT:
-  - Execution can borrow from storage (evicts cached data)
-  - Storage CANNOT borrow from execution
-  - This prevents OOM during shuffles/joins
-```
-
-### Q6: When would you use dynamic allocation vs fixed?
-
-```
-DYNAMIC ALLOCATION:
-  - Multi-stage pipelines (read → transform → join → write)
-  - Each stage needs different resources
-  - Cost optimization (release idle executors)
-  - Shared clusters (fair resource usage)
-  - spark.dynamicAllocation.enabled=true
-
-FIXED ALLOCATION:
-  - Streaming jobs (consistent resource needs)
-  - Single-stage operations
-  - When you need predictable performance
-  - Benchmark/performance testing
-  - spark.executor.instances=50
-```
-
-### Q7: Your 5 TB Spark job is OOM. Walk through debugging.
-
-```
-STEP 1: IDENTIFY WHERE
-  - Driver OOM? → Reduce collect(), increase driver memory
-  - Executor OOM? → Continue to step 2
-
-STEP 2: CHECK SPARK UI
-  - Storage tab: Is too much data cached?
-  - Stages tab: Which stage fails?
-  - Tasks tab: Is one task getting too much data? (SKEW)
-
-STEP 3: CHECK MEMORY SETTINGS
-  - spark.executor.memory = 50g (enough?)
-  - spark.executor.memoryOverhead = 10% (enough for off-heap?)
-  - spark.memory.fraction = 0.6 (needs more for execution?)
-
-STEP 4: CHECK SHUFFLE
-  - spark.sql.shuffle.partitions = 200? (TOO FEW! Increase to 2000+)
-  - Shuffle read per task > 2 GB? (partitions too large)
-
-STEP 5: CHECK FOR SKEW
-  - One task has 10x more data?
-  - Enable AQE: spark.sql.adaptive.skewJoin.enabled=true
-
-STEP 6: OPTIMIZE QUERY
-  - Filter early (before joins)
-  - Select only needed columns
-  - Broadcast small dimension tables
-  - Use Parquet with filter pushdown
+spark.dynamicAllocation.enabled = true
+spark.dynamicAllocation.minExecutors = 10
+spark.dynamicAllocation.maxExecutors = 100
+spark.dynamicAllocation.initialExecutors = 30
+spark.dynamicAllocation.executorIdleTimeout = 120s
+spark.dynamicAllocation.cachedExecutorIdleTimeout = 600s
+spark.dynamicAllocation.schedulerBacklogTimeout = 5s
+spark.shuffle.service.enabled = true
 ```
 
 ---
 
-## Quick Cheat Sheet: spark-submit for 5 TB
+## 23. STEP 22: Speculation Settings
+
+```
+FORMULA:
+  Enable speculation when:
+    - Job has many tasks (> 100)
+    - Data skew is possible
+    - Stragglers can waste cluster time
+
+  speculation_quantile = 0.75  (trigger when 75% of tasks complete)
+  speculation_multiplier = 1.5  (task must be 1.5x slower than median)
+
+  For 5 TB with 3000+ tasks → speculation is useful ✅
+
+CALCULATION:
+  At 75% completion of a 3000-task stage:
+    2250 tasks done, median time = 60s
+    Any task running > 60s × 1.5 = 90s → re-launched on another node
+```
+
+**Config:**
+```
+spark.speculation = true
+spark.speculation.interval = 100ms
+spark.speculation.multiplier = 1.5
+spark.speculation.quantile = 0.75
+```
+
+---
+
+## 24. STEP 23: Compression Codec
+
+```
+DECISION MATRIX:
+                     Compress Speed   Decompress Speed   Ratio   Splittable
+  Snappy             Fast             Fast               2-3x    Yes (Parquet)
+  ZSTD               Medium           Fast               3-5x    Yes (Parquet)
+  LZ4                Very Fast        Very Fast           2x      Yes
+  Gzip               Slow             Medium             5-8x    No (raw files)
+
+FOR 5 TB:
+  Input/Output format → Parquet with Snappy (balanced speed + compression)
+  Shuffle compression → LZ4 or Snappy (speed > ratio for shuffles)
+
+STORAGE SAVINGS:
+  Uncompressed:  15 TB
+  Snappy Parquet: 5 TB  (3x compression)
+  ZSTD Parquet:   3.5 TB (4.3x compression) → saves 1.5 TB storage
+```
+
+**Config:**
+```
+spark.sql.parquet.compression.codec = snappy
+spark.shuffle.compress = true
+spark.shuffle.spill.compress = true
+spark.io.compression.codec = lz4
+```
+
+---
+
+## 25. STEP 24: Data Partitioning (Write Layout)
+
+```
+FORMULA:
+  data_per_partition_value = D / num_unique_partition_values
+
+  Example: Partition by year/month (24 months of data)
+    data_per_partition = 5 TB / 24 = ~213 GB per month partition
+    files_per_partition = 213 GB / 512 MB = ~416 files per partition
+
+  Example: Partition by year/month/day (730 days)
+    data_per_partition = 5 TB / 730 = ~7 GB per day partition
+    files_per_partition = 7 GB / 512 MB = ~14 files per partition ✅ (good!)
+
+RULES:
+  Target per-partition size: 100 MB - 10 GB
+  Target files per partition: 1 - 50
+  Avoid partition cardinality > 50,000
+
+  GOOD: partitionBy("year", "month", "day")   → 730 partitions ✅
+  BAD:  partitionBy("year", "month", "day", "hour", "event_type")
+        → 730 × 24 × 50 = 876,000 partitions ❌ (small files problem)
+```
+
+---
+
+## 26. Full Calculation Summary
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    5 TB SPARK CLUSTER - COMPLETE CALCULATIONS               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  INPUT                                                                      │
+│  ─────                                                                      │
+│  Data Size .......................... 5 TB (Parquet compressed)              │
+│  In-Memory Size ..................... 15 TB (3x compression ratio)           │
+│  Peak with Shuffle .................. 30 TB (2x shuffle factor)             │
+│  Node Type .......................... r5.4xlarge (16 cores, 128 GB)         │
+│                                                                             │
+│  CLUSTER                                                                    │
+│  ───────                                                                    │
+│  Worker Nodes ....................... 25                                     │
+│  Total Cores ........................ 375  (25 × 15 available)              │
+│  Total RAM .......................... 3,200 GB  (25 × 128 GB)              │
+│  Total Local SSD .................... 12.5 TB  (25 × 500 GB)              │
+│                                                                             │
+│  PER EXECUTOR (75 total = 25 nodes × 3 per node)                           │
+│  ────────────                                                               │
+│  Cores per Executor ................. 5                                      │
+│  Container Memory ................... 40 GB                                  │
+│  Executor Memory (JVM Heap) ......... 36 GB                                 │
+│  Memory Overhead (Off-Heap) ......... 4 GB                                  │
+│  Off-Heap (Tungsten) ................ 4 GB                                  │
+│                                                                             │
+│  MEMORY BREAKDOWN PER EXECUTOR                                              │
+│  ─────────────────────────────                                              │
+│  Reserved Memory .................... 0.3 GB                                │
+│  Usable Memory ...................... 35.7 GB                               │
+│  Unified Memory (60%) ............... 21.4 GB                               │
+│  ├── Execution Memory (50%) ......... 10.7 GB                               │
+│  └── Storage Memory (50%) ........... 10.7 GB                               │
+│  User Memory (40%) .................. 14.3 GB                               │
+│  Memory Per Task .................... 2.14 GB  (10.7 GB / 5 cores)         │
+│                                                                             │
+│  DRIVER                                                                     │
+│  ──────                                                                     │
+│  Driver Memory ...................... 10 GB                                  │
+│  Driver Memory Overhead ............. 2 GB                                   │
+│  Max Result Size .................... 4 GB                                   │
+│                                                                             │
+│  PARALLELISM                                                                │
+│  ───────────                                                                │
+│  Total Executors .................... 75                                     │
+│  Total Cores ........................ 375                                    │
+│  Shuffle Partitions ................. 3,000                                  │
+│  Default Parallelism ................ 750                                    │
+│  Partition Size ..................... ~1.7 GB  (5 TB / 3000)               │
+│  Broadcast Join Threshold ........... 256 MB                                │
+│                                                                             │
+│  DYNAMIC ALLOCATION                                                         │
+│  ──────────────────                                                         │
+│  Min Executors ...................... 10                                     │
+│  Max Executors ...................... 100                                    │
+│  Initial Executors .................. 30                                     │
+│                                                                             │
+│  NETWORK                                                                    │
+│  ───────                                                                    │
+│  Network Timeout .................... 600s                                   │
+│  Shuffle IO Retries ................. 10                                     │
+│  Shuffle IO Retry Wait .............. 30s                                   │
+│                                                                             │
+│  STORAGE                                                                    │
+│  ───────                                                                    │
+│  Format ............................. Parquet                                │
+│  Compression ........................ Snappy                                 │
+│  Output Files ....................... ~5,000 - 10,000                       │
+│  Target File Size ................... 512 MB - 1 GB                         │
+│  Data Partitioning .................. year/month/day (~730 partitions)      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 27. Final spark-submit Command
 
 ```bash
 spark-submit \
   --master yarn \
   --deploy-mode cluster \
-  --num-executors 50 \
+  \
+  # ── Executor Settings (Step 1-4, 6) ──
+  --num-executors 75 \
   --executor-cores 5 \
-  --executor-memory 50g \
-  --driver-memory 16g \
-  --conf spark.executor.memoryOverhead=6g \
-  --conf spark.driver.memoryOverhead=4g \
+  --executor-memory 36g \
+  --conf spark.executor.memoryOverhead=4g \
+  \
+  # ── Driver Settings (Step 7-9) ──
+  --driver-memory 10g \
+  --conf spark.driver.memoryOverhead=2g \
+  --conf spark.driver.maxResultSize=4g \
+  \
+  # ── Memory Fractions (Step 10-11) ──
+  --conf spark.memory.fraction=0.6 \
+  --conf spark.memory.storageFraction=0.5 \
+  --conf spark.memory.offHeap.enabled=true \
+  --conf spark.memory.offHeap.size=4g \
+  \
+  # ── Parallelism (Step 12-13) ──
+  --conf spark.sql.shuffle.partitions=3000 \
+  --conf spark.default.parallelism=750 \
+  \
+  # ── Broadcast (Step 14) ──
+  --conf spark.sql.autoBroadcastJoinThreshold=256MB \
+  \
+  # ── Shuffle & Compression (Step 17, 23) ──
+  --conf spark.shuffle.compress=true \
+  --conf spark.shuffle.spill.compress=true \
+  --conf spark.shuffle.file.buffer=1m \
+  --conf spark.reducer.maxSizeInFlight=96m \
+  --conf spark.shuffle.service.enabled=true \
+  --conf spark.io.compression.codec=lz4 \
+  --conf spark.local.dir=/mnt/nvme1,/mnt/nvme2 \
+  \
+  # ── Network (Step 18) ──
+  --conf spark.network.timeout=600s \
+  --conf spark.rpc.askTimeout=600s \
+  --conf spark.sql.broadcastTimeout=600s \
+  --conf spark.shuffle.io.maxRetries=10 \
+  --conf spark.shuffle.io.retryWait=30s \
+  \
+  # ── Serialization (Step 20) ──
   --conf spark.serializer=org.apache.spark.serializer.KryoSerializer \
-  --conf spark.sql.shuffle.partitions=2000 \
+  --conf spark.kryoserializer.buffer.max=1024m \
+  \
+  # ── GC (Step 19) ──
+  --conf "spark.executor.extraJavaOptions=-XX:+UseG1GC -XX:InitiatingHeapOccupancyPercent=35 -XX:G1HeapRegionSize=16m -XX:+ParallelRefProcEnabled" \
+  \
+  # ── Speculation (Step 22) ──
+  --conf spark.speculation=true \
+  --conf spark.speculation.interval=100ms \
+  --conf spark.speculation.multiplier=1.5 \
+  --conf spark.speculation.quantile=0.75 \
+  \
+  # ── AQE (Adaptive Query Execution) ──
   --conf spark.sql.adaptive.enabled=true \
   --conf spark.sql.adaptive.coalescePartitions.enabled=true \
   --conf spark.sql.adaptive.skewJoin.enabled=true \
-  --conf spark.sql.parquet.filterPushdown=true \
-  --conf spark.sql.autoBroadcastJoinThreshold=100MB \
-  --conf spark.network.timeout=600s \
-  --conf spark.shuffle.compress=true \
-  --conf spark.shuffle.spill.compress=true \
-  --conf spark.shuffle.service.enabled=true \
+  --conf spark.sql.adaptive.skewJoin.skewedPartitionFactor=5 \
+  --conf spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes=256MB \
+  --conf spark.sql.adaptive.advisoryPartitionSizeInBytes=256MB \
+  \
+  # ── Dynamic Allocation (Step 21) ──
   --conf spark.dynamicAllocation.enabled=true \
   --conf spark.dynamicAllocation.minExecutors=10 \
   --conf spark.dynamicAllocation.maxExecutors=100 \
+  --conf spark.dynamicAllocation.initialExecutors=30 \
+  --conf spark.dynamicAllocation.executorIdleTimeout=120s \
+  --conf spark.dynamicAllocation.cachedExecutorIdleTimeout=600s \
+  \
+  # ── I/O Optimization ──
+  --conf spark.sql.parquet.filterPushdown=true \
+  --conf spark.sql.parquet.mergeSchema=false \
+  --conf spark.sql.parquet.enableVectorizedReader=true \
+  --conf spark.sql.parquet.compression.codec=snappy \
+  \
   my_5tb_etl_job.py
 ```
 
 ---
 
-**This framework covers everything you need to configure Spark for 5 TB workloads in interviews and production!**
+## 28. Scaling Formula: Any Data Size
+
+Replace `D` with your data size and recalculate every parameter:
+
+```
+GIVEN:
+  D = your data size in TB
+  CR = compression ratio (3 for Parquet/Snappy, 4 for ZSTD)
+  SF = shuffle factor (2 for ETL, 3 for heavy joins)
+  M_node = RAM per node in GB
+  C_node = cores per node
+
+CALCULATE:
+  cores_per_executor     = 5  (constant)
+  C_avail                = C_node - 1
+  executors_per_node     = floor(C_avail / 5)
+  container_memory       = floor((M_node - 8) / executors_per_node)
+  memory_overhead        = max(0.384, container_memory × 0.10)
+  executor_memory        = container_memory - memory_overhead
+  nodes                  = ceil((D × 1024 × CR × SF × 0.15) / (M_node - 8))
+  total_executors        = nodes × executors_per_node
+  total_cores            = total_executors × 5
+  driver_memory          = max(8, total_executors / 10)  in GB
+  driver_overhead        = max(1, driver_memory × 0.10)
+  max_result_size        = min(driver_memory × 0.4, 4)
+  shuffle_partitions     = max(total_cores × 4, (D × 1024) / 1)
+  default_parallelism    = total_cores × 2
+  broadcast_threshold    = min(executor_memory × 0.15, 1)  in GB
+  network_timeout        = max(300, (D × 1024) / 31.25 × 3)  in seconds
+```
+
+### Quick Lookup Table
+
+| Data Size | Nodes (128GB) | Executors | Total Cores | Shuffle Partitions | Executor Mem |
+|-----------|---------------|-----------|-------------|--------------------|--------------|
+| 100 GB    | 3             | 9         | 45          | 200                | 36g          |
+| 500 GB    | 5             | 15        | 75          | 500                | 36g          |
+| 1 TB      | 8             | 24        | 120         | 1,000              | 36g          |
+| 2 TB      | 13            | 39        | 195         | 2,000              | 36g          |
+| 5 TB      | 25            | 75        | 375         | 3,000              | 36g          |
+| 10 TB     | 45            | 135       | 675         | 6,000              | 36g          |
+| 20 TB     | 85            | 255       | 1,275       | 10,000             | 36g          |
+| 50 TB     | 200           | 600       | 3,000       | 25,000             | 36g          |
+| 100 TB    | 380           | 1,140     | 5,700       | 50,000             | 36g          |
+
+---
+
+## 29. Verification Checklist
+
+After calculating, verify every parameter passes these checks:
+
+```
+MEMORY CHECKS:
+  ☐ executor_memory + overhead ≤ container_memory
+  ☐ executors_per_node × container_memory ≤ M_node - OS_reserve
+  ☐ executor_memory ≤ 64 GB (avoid long GC pauses; if > 64 GB, split into more executors)
+  ☐ driver_memory ≥ broadcast_threshold × 2
+  ☐ max_result_size ≤ driver_memory × 0.5
+
+CORE CHECKS:
+  ☐ cores_per_executor = 3 to 5 (never > 5)
+  ☐ executors_per_node × cores_per_executor ≤ C_node - 1
+  ☐ total_cores ≥ shuffle_partitions / 10 (else too many waves)
+
+PARTITION CHECKS:
+  ☐ partition_size = D / shuffle_partitions ≤ memory_per_task (execution_memory / cores)
+  ☐ partition_size ≥ 64 MB (avoid scheduling overhead)
+  ☐ shuffle_partitions ≥ total_cores × 2 (enough work for all cores)
+
+NETWORK CHECKS:
+  ☐ network_timeout ≥ 300s for multi-TB workloads
+  ☐ shuffle_io_retries ≥ 5
+
+STORAGE CHECKS:
+  ☐ local_ssd_per_node ≥ (D × CR × SF) / nodes × 0.5
+  ☐ output_file_size between 128 MB and 1 GB
+  ☐ partition cardinality < 50,000
+
+OVERALL:
+  ☐ Data / Cluster RAM ratio ≤ 5x (if higher, need more nodes)
+  ☐ Total executor memory ≥ D × 0.3 (at least 30% of data fits at once)
+  ☐ AQE enabled = true (Spark 3.0+)
+```
+
+---
+
+**Every number in this document is derived from a formula. Plug in your data size, node spec, and follow the steps to calculate your configuration from scratch.**

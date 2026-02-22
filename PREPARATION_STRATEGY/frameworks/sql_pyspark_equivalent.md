@@ -19,13 +19,19 @@
 09. Pivot & Unpivot
 10. Comparison Problems (vs Average/Previous)
 11. Hierarchical/Recursive Queries
-12. Pattern Matching & Sequences
-13. Data Quality & Validation
-14. String Operations
-15. Date Operations
-16. Performance Optimization
-17. Quick Translation Guide
-18. Interview Pattern Recognition
+12. Self-Referencing Problems
+13. Pattern Matching & Sequences
+14. Graph/Network Problems
+15. Data Quality & Validation
+16. Column Transformations
+17. String Operations
+18. Date Operations
+19. Performance Optimization
+20. Advanced PySpark Patterns (UDFs, Caching, Broadcast)
+21. Quick Translation Guide
+22. Syntax Quick Reference
+23. Interview Pattern Recognition
+24. Common Gotchas
 ```
 
 ---
@@ -86,6 +92,21 @@ SELECT col1 FROM table_a UNION SELECT col1 FROM table_b;
 # PySpark
 df_a.union(df_b)              # equivalent to UNION ALL
 df_a.union(df_b).distinct()   # equivalent to UNION
+```
+
+### EXCEPT (Set Difference)
+
+```sql
+-- SQL
+SELECT id FROM table_a
+EXCEPT
+SELECT id FROM table_b;
+```
+
+```python
+# PySpark
+df_a.select("id").exceptAll(df_b.select("id"))   # keeps duplicates
+df_a.select("id").subtract(df_b.select("id"))     # removes duplicates
 ```
 
 ### Column Aliases & Derived Columns
@@ -174,6 +195,95 @@ WHERE o.customer_id IS NULL;
 customers.join(orders, "customer_id", "left_anti")
 ```
 
+### Date Range Filtering
+
+```sql
+-- SQL
+SELECT * FROM orders
+WHERE order_date >= '2024-01-01' AND order_date < '2024-02-01';
+
+SELECT * FROM orders
+WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31';
+```
+
+```python
+# PySpark
+df.filter(
+    (F.col("order_date") >= F.lit("2024-01-01")) &
+    (F.col("order_date") < F.lit("2024-02-01"))
+)
+
+df.filter(F.col("order_date").between("2024-01-01", "2024-01-31"))
+```
+
+### Array / Collection Filtering (PySpark-Specific)
+
+```python
+# PySpark: Array contains
+df.filter(F.array_contains(F.col("tags"), "urgent"))
+
+# PySpark: Array overlap
+from pyspark.sql.functions import array_intersect
+
+df.filter(
+    F.size(F.array_intersect(
+        F.col("user_interests"),
+        F.array(F.lit("tech"), F.lit("science"))
+    )) > 0
+)
+```
+
+### Case-Insensitive Filtering
+
+```sql
+-- SQL
+SELECT * FROM users WHERE LOWER(status) = 'active';
+SELECT * FROM users WHERE name ILIKE '%smith%';  -- PostgreSQL
+```
+
+```python
+# PySpark
+df.filter(F.lower(F.col("status")) == "active")
+df.filter(F.lower(F.col("name")).contains("smith"))
+```
+
+### Products Not Ordered in Last 30 Days
+
+```sql
+-- SQL
+SELECT p.*
+FROM products p
+LEFT JOIN orders o ON p.product_id = o.product_id
+                   AND o.order_date >= CURRENT_DATE - INTERVAL '30 days'
+WHERE o.product_id IS NULL;
+```
+
+```python
+# PySpark
+recent_orders = orders.filter(
+    F.col("order_date") >= F.date_sub(F.current_date(), 30)
+)
+products.join(recent_orders, "product_id", "left_anti")
+```
+
+### Students Who Took Class A but Not Class B
+
+```sql
+-- SQL
+SELECT student_id
+FROM enrollments WHERE class_id = 'A'
+AND student_id NOT IN (
+    SELECT student_id FROM enrollments WHERE class_id = 'B'
+);
+```
+
+```python
+# PySpark
+class_a = df.filter(F.col("class_id") == "A").select("student_id")
+class_b = df.filter(F.col("class_id") == "B").select("student_id")
+class_a.join(class_b, "student_id", "left_anti")
+```
+
 ---
 
 ## 3. Aggregations
@@ -228,7 +338,9 @@ df.groupBy("product_id") \
 SELECT
     department,
     COUNT(*) AS total_employees,
-    SUM(CASE WHEN salary > 100000 THEN 1 ELSE 0 END) AS high_earners
+    SUM(CASE WHEN salary > 100000 THEN 1 ELSE 0 END) AS high_earners,
+    SUM(CASE WHEN tenure > 5 THEN 1 ELSE 0 END) AS veterans,
+    AVG(CASE WHEN performance = 'Excellent' THEN salary END) AS avg_salary_top
 FROM employees
 GROUP BY department;
 ```
@@ -237,7 +349,10 @@ GROUP BY department;
 # PySpark
 df.groupBy("department").agg(
     F.count("*").alias("total_employees"),
-    F.sum(F.when(F.col("salary") > 100000, 1).otherwise(0)).alias("high_earners")
+    F.sum(F.when(F.col("salary") > 100000, 1).otherwise(0)).alias("high_earners"),
+    F.sum(F.when(F.col("tenure") > 5, 1).otherwise(0)).alias("veterans"),
+    F.avg(F.when(F.col("performance") == "Excellent",
+                 F.col("salary"))).alias("avg_salary_top")
 )
 ```
 
@@ -272,15 +387,43 @@ df.groupBy("customer_id").agg(
 )
 ```
 
+### First / Last Value in Group
+
+```sql
+-- SQL
+SELECT
+    customer_id,
+    FIRST_VALUE(product) OVER (PARTITION BY customer_id ORDER BY purchase_date) AS first_purchase,
+    LAST_VALUE(product) OVER (PARTITION BY customer_id ORDER BY purchase_date
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_purchase
+FROM purchases;
+```
+
+```python
+# PySpark
+window_spec = Window.partitionBy("customer_id").orderBy("purchase_date")
+
+df.withColumn(
+    "first_purchase", F.first("product").over(window_spec)
+).withColumn(
+    "last_purchase", F.last("product").over(window_spec)
+)
+```
+
 ### Statistical Aggregations
 
 ```sql
 -- SQL
 SELECT
     department,
+    COUNT(*) AS count,
     AVG(salary) AS mean,
     STDDEV(salary) AS stddev,
-    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary) AS median
+    VARIANCE(salary) AS variance,
+    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY salary) AS q1,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY salary) AS median,
+    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY salary) AS q3,
+    MODE() WITHIN GROUP (ORDER BY salary) AS mode
 FROM employees
 GROUP BY department;
 ```
@@ -288,9 +431,21 @@ GROUP BY department;
 ```python
 # PySpark
 df.groupBy("department").agg(
+    F.count("*").alias("count"),
     F.mean("salary").alias("mean"),
     F.stddev("salary").alias("stddev"),
-    F.expr("percentile_approx(salary, 0.5)").alias("median")
+    F.variance("salary").alias("variance"),
+    F.expr("percentile_approx(salary, 0.25)").alias("q1"),
+    F.expr("percentile_approx(salary, 0.5)").alias("median"),
+    F.expr("percentile_approx(salary, 0.75)").alias("q3"),
+    F.skewness("salary").alias("skewness"),
+    F.kurtosis("salary").alias("kurtosis")
+)
+
+# Approximate aggregations (faster for large datasets)
+df.groupBy("user_id").agg(
+    F.approx_count_distinct("product_id", rsd=0.05).alias("approx_unique_products"),
+    F.expr("percentile_approx(price, 0.5, 100)").alias("median_price")  # 100 = accuracy
 )
 ```
 
@@ -353,7 +508,63 @@ second_highest = (df
 )
 ```
 
-### Common Pitfall
+### Top 10% of Earners (NTILE)
+
+```sql
+-- SQL
+SELECT * FROM (
+    SELECT *, NTILE(10) OVER (ORDER BY salary DESC) AS decile
+    FROM employees
+) bucketed
+WHERE decile = 1;
+```
+
+```python
+# PySpark
+window_spec = Window.orderBy(F.col("salary").desc())
+
+df_top_10pct = (df
+    .withColumn("decile", F.ntile(10).over(window_spec))
+    .filter(F.col("decile") == 1)
+)
+```
+
+### Rank with Multiple Sorting Criteria
+
+```sql
+-- SQL
+SELECT *,
+    ROW_NUMBER() OVER (
+        PARTITION BY department
+        ORDER BY performance_score DESC, tenure DESC
+    ) AS rank
+FROM employees;
+```
+
+```python
+# PySpark
+window_spec = Window.partitionBy("department").orderBy(
+    F.col("performance_score").desc(),
+    F.col("tenure").desc()
+)
+
+df_ranked = df.withColumn("rank", F.row_number().over(window_spec))
+```
+
+### Comparing All Ranking Functions Side-by-Side
+
+```python
+# PySpark: See all ranking functions at once
+window_spec = Window.partitionBy("category").orderBy(F.col("sales").desc())
+
+df_with_ranks = (df
+    .withColumn("row_num", F.row_number().over(window_spec))
+    .withColumn("rank", F.rank().over(window_spec))
+    .withColumn("dense_rank", F.dense_rank().over(window_spec))
+)
+```
+
+### Common Pitfalls
 
 ```sql
 -- SQL ❌ WRONG: LIMIT gives top N overall, NOT per group
@@ -373,6 +584,14 @@ df.orderBy(F.col("salary").desc()).limit(3)
 # PySpark ✅ CORRECT
 window_spec = Window.partitionBy("dept").orderBy(F.col("salary").desc())
 df.withColumn("rn", F.row_number().over(window_spec)).filter(F.col("rn") <= 3)
+
+# ❌ WRONG: Not handling ties properly
+df.orderBy(F.col("score").desc()).limit(10)
+# If 10th and 11th have same score, one is randomly excluded
+
+# ✅ CORRECT: Use dense_rank or rank for ties
+window_spec = Window.orderBy(F.col("score").desc())
+df.withColumn("rank", F.dense_rank().over(window_spec)).filter(F.col("rank") <= 10)
 ```
 
 ---
@@ -388,6 +607,20 @@ df.withColumn("rn", F.row_number().over(window_spec)).filter(F.col("rn") <= 3)
 | Centered window         | `ROWS BETWEEN 3 PRECEDING AND 3 FOLLOWING`  | `Window.rowsBetween(-3, 3)`                            |
 | All rows in partition   | No `ORDER BY` clause                         | `Window.partitionBy("col")` (no `orderBy`)             |
 
+### rowsBetween vs rangeBetween (PySpark)
+
+```python
+# rowsBetween: Physical row positions
+# Use when you want exactly N rows (e.g., "last 10 transactions")
+Window.orderBy("date").rowsBetween(-6, 0)  # Last 7 rows
+
+# rangeBetween: Logical value ranges (for dates/timestamps)
+# Use when you want time-based windows (e.g., "last 7 days")
+Window.orderBy(F.col("date").cast("long")).rangeBetween(
+    -7*24*60*60, 0  # Last 7 days in seconds
+)
+```
+
 ### Running Total
 
 ```sql
@@ -395,6 +628,12 @@ df.withColumn("rn", F.row_number().over(window_spec)).filter(F.col("rn") <= 3)
 SELECT
     date, amount,
     SUM(amount) OVER (ORDER BY date) AS running_total
+FROM transactions;
+
+-- Running total per category
+SELECT
+    category, date, amount,
+    SUM(amount) OVER (PARTITION BY category ORDER BY date) AS category_running_total
 FROM transactions;
 ```
 
@@ -404,6 +643,31 @@ window_spec = Window.orderBy("date").rowsBetween(
     Window.unboundedPreceding, Window.currentRow
 )
 df.withColumn("running_total", F.sum("amount").over(window_spec))
+
+# Running total per category
+window_spec = Window.partitionBy("category").orderBy("date").rowsBetween(
+    Window.unboundedPreceding, Window.currentRow
+)
+df.withColumn("category_running_total", F.sum("amount").over(window_spec))
+```
+
+### Running Total with Month Reset
+
+```python
+# PySpark: Reset running total each month
+df_with_month = df.withColumn(
+    "year_month",
+    F.concat(F.year("date"), F.lit("-"), F.month("date"))
+)
+
+window_spec = Window.partitionBy("product_id", "year_month").orderBy("date").rowsBetween(
+    Window.unboundedPreceding, Window.currentRow
+)
+
+df_monthly_running = df_with_month.withColumn(
+    "monthly_running_total",
+    F.sum("amount").over(window_spec)
+)
 ```
 
 ### 7-Day Moving Average
@@ -422,6 +686,20 @@ FROM sales;
 # PySpark
 window_spec = Window.orderBy("date").rowsBetween(-6, 0)
 df.withColumn("moving_avg_7day", F.avg("daily_sales").over(window_spec))
+```
+
+### Rolling Sum with Time-Based Window (rangeBetween)
+
+```python
+# PySpark: Sum of sales in last 7 days (not last 7 rows)
+window_spec = Window.partitionBy("store_id").orderBy(
+    F.col("date").cast("long")
+).rangeBetween(-7*24*60*60, 0)  # 7 days in seconds
+
+df_rolling = df.withColumn(
+    "sales_last_7_days",
+    F.sum("sales").over(window_spec)
+)
 ```
 
 ### LAG / LEAD (Previous/Next Value)
@@ -444,6 +722,20 @@ df_change = (df
     .withColumn("prev_value", F.lag("value", 1).over(window_spec))
     .withColumn("next_value", F.lead("value", 1).over(window_spec))
     .withColumn("change", F.col("value") - F.col("prev_value"))
+)
+```
+
+### Cumulative Distinct Count
+
+```python
+# PySpark: Cumulative distinct products purchased
+window_spec = Window.partitionBy("customer_id").orderBy("purchase_date").rowsBetween(
+    Window.unboundedPreceding, Window.currentRow
+)
+
+df_cumulative = df.withColumn(
+    "cumulative_distinct_products",
+    F.size(F.collect_set("product_id").over(window_spec))
 )
 ```
 
@@ -490,6 +782,49 @@ date_series = spark.range(0, 365).select(
 )
 ```
 
+### Fill Missing Dates with 0 Values
+
+```sql
+-- SQL
+WITH RECURSIVE date_series AS (
+    SELECT DATE '2024-01-01' AS date
+    UNION ALL
+    SELECT date + INTERVAL '1 day' FROM date_series WHERE date < DATE '2024-12-31'
+)
+SELECT d.date, COALESCE(s.sales, 0) AS sales
+FROM date_series d
+LEFT JOIN daily_sales s ON d.date = s.date;
+```
+
+```python
+# PySpark
+date_series = spark.sql("""
+    SELECT explode(sequence(to_date('2024-01-01'), to_date('2024-12-31'), interval 1 day)) as date
+""")
+complete_dates = date_series.join(df, "date", "left").fillna(0)
+```
+
+### Find Missing Transaction IDs
+
+```sql
+-- SQL
+WITH RECURSIVE all_ids AS (
+    SELECT 1 AS id
+    UNION ALL
+    SELECT id + 1 FROM all_ids WHERE id < 1000
+)
+SELECT id AS missing_id
+FROM all_ids
+WHERE NOT EXISTS (SELECT 1 FROM transactions WHERE transaction_id = id);
+```
+
+```python
+# PySpark
+max_id = df.agg(F.max("transaction_id")).first()[0]
+all_ids = spark.range(1, max_id + 1).select(F.col("id").alias("transaction_id"))
+missing_ids = all_ids.join(df, "transaction_id", "left_anti")
+```
+
 ### Find Gaps
 
 ```sql
@@ -509,13 +844,38 @@ date_range = spark.sql("""
 """)
 gaps = date_range.join(df, "date", "left_anti")
 
-# Or using lag/lead
+# Or using lag/lead for time-based gaps
 window_spec = Window.partitionBy("device_id").orderBy("event_time")
 gaps = (df
     .withColumn("next_event", F.lead("event_time").over(window_spec))
     .withColumn("gap_seconds",
                 F.unix_timestamp("next_event") - F.unix_timestamp("event_time"))
-    .filter(F.col("gap_seconds") > 3600)
+    .filter(F.col("gap_seconds") > 3600)  # Gaps > 1 hour
+)
+```
+
+### Fill Gaps with Linear Interpolation (PySpark)
+
+```python
+# PySpark: Sensor data interpolation
+window_spec = Window.partitionBy("sensor_id").orderBy("timestamp")
+
+df_with_prev_next = (df
+    .withColumn("prev_value", F.lag("temperature").over(window_spec))
+    .withColumn("prev_time", F.lag("timestamp").over(window_spec))
+    .withColumn("next_value", F.lead("temperature").over(window_spec))
+    .withColumn("next_time", F.lead("timestamp").over(window_spec))
+)
+
+df_interpolated = df_with_prev_next.withColumn(
+    "interpolated_temp",
+    F.when(F.col("temperature").isNotNull(), F.col("temperature"))
+    .otherwise(
+        F.col("prev_value") +
+        (F.col("next_value") - F.col("prev_value")) *
+        (F.unix_timestamp("timestamp") - F.unix_timestamp("prev_time")) /
+        (F.unix_timestamp("next_time") - F.unix_timestamp("prev_time"))
+    )
 )
 ```
 
@@ -651,6 +1011,53 @@ from pyspark.sql.functions import broadcast
 large_df.join(broadcast(small_df), "key", "left")
 ```
 
+### Join with Column Renaming (Avoid Ambiguity)
+
+```python
+# PySpark: Rename before join to avoid duplicate column names
+df1.join(
+    df2.withColumnRenamed("id", "customer_id"),
+    df1.id == df2.customer_id,
+    "left"
+).drop(df2.customer_id)
+```
+
+### Multiple Table Joins
+
+```sql
+-- SQL
+SELECT o.order_id, c.customer_name, p.product_name, r.region_name, o.amount
+FROM orders o
+LEFT JOIN customers c ON o.customer_id = c.customer_id
+LEFT JOIN products p ON o.product_id = p.product_id
+LEFT JOIN regions r ON o.region_id = r.id;
+```
+
+```python
+# PySpark
+result = (orders
+    .join(customers, "customer_id", "left")
+    .join(products, "product_id", "left")
+    .join(regions, orders.region_id == regions.id, "left")
+    .select(
+        orders["order_id"],
+        customers["customer_name"],
+        products["product_name"],
+        regions["region_name"],
+        orders["amount"]
+    )
+)
+```
+
+### Join Performance Checklist
+
+| Do                                          | Don't                                             |
+|---------------------------------------------|---------------------------------------------------|
+| Use broadcast for small tables (< 10MB)     | Join without filtering large tables first          |
+| Filter before joining                       | Use cross join accidentally (missing condition)    |
+| Select only needed columns before join      | Keep all columns from both tables                  |
+| Use appropriate join type                   | Use outer join when inner join suffices             |
+
 ---
 
 ## 8. Deduplication
@@ -660,6 +1067,11 @@ large_df.join(broadcast(small_df), "key", "left")
 ```sql
 -- SQL
 SELECT DISTINCT col1, col2 FROM table_name;
+
+-- PostgreSQL: DISTINCT ON (keep first per group)
+SELECT DISTINCT ON (key_column) *
+FROM table_name
+ORDER BY key_column, timestamp;
 ```
 
 ```python
@@ -708,7 +1120,9 @@ duplicates = (df
     .groupBy("email")
     .agg(
         F.count("*").alias("count"),
-        F.collect_list("user_id").alias("duplicate_ids")
+        F.collect_list("user_id").alias("duplicate_ids"),
+        F.min("created_date").alias("first_created"),
+        F.max("created_date").alias("last_created")
     )
     .filter(F.col("count") > 1)
 )
@@ -746,6 +1160,52 @@ df_best = (df
 )
 ```
 
+### Merge Duplicate Records (Consolidate)
+
+```sql
+-- SQL: Take non-null values from any duplicate
+SELECT
+    customer_id,
+    MAX(name) AS name,
+    MAX(email) AS email,
+    MAX(phone) AS phone,
+    MIN(created_date) AS created_date,
+    MAX(updated_date) AS updated_date
+FROM customer_records
+GROUP BY customer_id;
+```
+
+```python
+# PySpark
+df_merged = df.groupBy("customer_id").agg(
+    F.max("name").alias("name"),
+    F.max("email").alias("email"),
+    F.max("phone").alias("phone"),
+    F.min("created_date").alias("created_date"),
+    F.max("updated_date").alias("updated_date")
+)
+```
+
+### Fuzzy Deduplication (Similar Records)
+
+```python
+# PySpark: Find records with similar names using levenshtein distance
+from pyspark.sql.functions import levenshtein
+
+df_similarity = df.alias("a").join(
+    df.alias("b"),
+    (F.col("a.id") < F.col("b.id")) &  # Avoid comparing same record twice
+    (F.levenshtein(F.col("a.name"), F.col("b.name")) <= 3),  # Edit distance <= 3
+    "inner"
+).select(
+    F.col("a.id").alias("id_1"),
+    F.col("b.id").alias("id_2"),
+    F.col("a.name").alias("name_1"),
+    F.col("b.name").alias("name_2"),
+    F.levenshtein(F.col("a.name"), F.col("b.name")).alias("edit_distance")
+)
+```
+
 ---
 
 ## 9. Pivot & Unpivot
@@ -761,14 +1221,50 @@ SELECT
     SUM(CASE WHEN month = 3 THEN sales ELSE 0 END) AS Mar
 FROM monthly_sales
 GROUP BY product_name;
+
+-- PostgreSQL: Dynamic pivot using crosstab
+SELECT * FROM crosstab(
+    'SELECT region, quarter, revenue FROM sales ORDER BY 1,2',
+    'SELECT DISTINCT quarter FROM sales ORDER BY 1'
+) AS ct(region text, Q1 numeric, Q2 numeric, Q3 numeric, Q4 numeric);
 ```
 
 ```python
 # PySpark
 df.groupBy("product_name").pivot("month").agg(F.sum("sales"))
 
-# With specific values (faster)
+# With specific values (faster - avoids extra scan)
 df.groupBy("product_name").pivot("month", [1, 2, 3]).agg(F.sum("sales"))
+```
+
+### Pivot with Multiple Aggregations
+
+```python
+# PySpark
+df_pivoted = (df
+    .groupBy("region")
+    .pivot("quarter")
+    .agg(
+        F.sum("revenue").alias("total_revenue"),
+        F.avg("price").alias("avg_price")
+    )
+)
+```
+
+### Conditional Pivot
+
+```python
+# PySpark: Pivot with conditions
+df_pivoted = (df
+    .groupBy("product")
+    .pivot("region")
+    .agg(
+        F.sum(F.when(F.col("status") == "completed",
+                     F.col("amount")).otherwise(0)).alias("completed_sales"),
+        F.sum(F.when(F.col("status") == "pending",
+                     F.col("amount")).otherwise(0)).alias("pending_sales")
+    )
+)
 ```
 
 ### Unpivot (Columns to Rows)
@@ -797,6 +1293,18 @@ df.selectExpr(
 )
 ```
 
+### Dynamic Unpivot (All Columns Except ID)
+
+```python
+# PySpark: Dynamically unpivot all value columns
+value_cols = [c for c in df.columns if c not in ['id', 'name']]
+stack_expr = f"stack({len(value_cols)}, " + \
+             ", ".join([f"'{c}', {c}" for c in value_cols]) + \
+             ") as (metric, value)"
+
+df_unpivoted = df.selectExpr("id", "name", stack_expr)
+```
+
 ---
 
 ## 10. Comparison Problems (vs Average / Previous)
@@ -811,6 +1319,15 @@ SELECT * FROM (
     FROM employees
 ) t
 WHERE salary > dept_avg;
+
+-- SQL Alternative: Subquery approach
+SELECT *
+FROM employees t
+JOIN (
+    SELECT department, AVG(salary) AS avg_salary
+    FROM employees GROUP BY department
+) agg ON t.department = agg.department
+WHERE t.salary > agg.avg_salary;
 ```
 
 ```python
@@ -820,6 +1337,31 @@ window_spec = Window.partitionBy("department")
 above_avg = (df
     .withColumn("dept_avg", F.avg("salary").over(window_spec))
     .filter(F.col("salary") > F.col("dept_avg"))
+)
+```
+
+### Sales Above Monthly Median
+
+```sql
+-- SQL
+SELECT date, sales_amount, monthly_median
+FROM (
+    SELECT date, sales_amount,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sales_amount)
+            OVER (PARTITION BY DATE_TRUNC('month', date)) AS monthly_median
+    FROM daily_sales
+) t
+WHERE sales_amount > monthly_median;
+```
+
+```python
+# PySpark
+monthly_window = Window.partitionBy(F.date_trunc("month", F.col("date")))
+
+df_above_median = (df
+    .withColumn("monthly_median",
+        F.expr("percentile_approx(sales_amount, 0.5)").over(monthly_window))
+    .filter(F.col("sales_amount") > F.col("monthly_median"))
 )
 ```
 
@@ -847,6 +1389,44 @@ df_outliers = (df
     .withColumn("z_score",
         (F.col("salary") - F.col("avg_salary")) / F.col("stddev_salary"))
     .filter(F.abs(F.col("z_score")) > 2)
+)
+```
+
+### Outlier Detection (IQR Method)
+
+```sql
+-- SQL
+WITH stats AS (
+    SELECT
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY salary) AS q1,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY salary) AS q3
+    FROM employees
+),
+bounds AS (
+    SELECT
+        q1 - 1.5 * (q3 - q1) AS lower_bound,
+        q3 + 1.5 * (q3 - q1) AS upper_bound
+    FROM stats
+)
+SELECT *
+FROM employees, bounds
+WHERE salary < lower_bound OR salary > upper_bound;
+```
+
+```python
+# PySpark
+window_spec = Window.partitionBy()
+
+df_outliers = (df
+    .withColumn("q1", F.expr("percentile_approx(salary, 0.25)").over(window_spec))
+    .withColumn("q3", F.expr("percentile_approx(salary, 0.75)").over(window_spec))
+    .withColumn("iqr", F.col("q3") - F.col("q1"))
+    .withColumn("lower_bound", F.col("q1") - 1.5 * F.col("iqr"))
+    .withColumn("upper_bound", F.col("q3") + 1.5 * F.col("iqr"))
+    .filter(
+        (F.col("salary") < F.col("lower_bound")) |
+        (F.col("salary") > F.col("upper_bound"))
+    )
 )
 ```
 
@@ -881,7 +1461,7 @@ df_mom = (df
 
 ## 11. Hierarchical / Recursive Queries
 
-### Employee Reporting Chain
+### Employee Reporting Chain (Bottom-Up)
 
 ```sql
 -- SQL: Recursive CTE
@@ -899,10 +1479,7 @@ SELECT * FROM chain ORDER BY level;
 ```
 
 ```python
-# PySpark: No native recursive CTE support
-# Approach: Use iterative joins or GraphFrames
-
-# Iterative approach
+# PySpark: No native recursive CTE support - use iterative joins
 current_level = df.filter(F.col("emp_id") == 123).withColumn("level", F.lit(0))
 result = current_level
 
@@ -917,7 +1494,7 @@ for i in range(1, max_depth):
     result = result.union(next_level)
     current_level = next_level
 
-# Alternative: Use Spark SQL which supports recursive CTEs in newer versions
+# Alternative: Spark SQL supports recursive CTEs in newer versions
 spark.sql("""
     WITH RECURSIVE chain AS (
         SELECT emp_id, name, manager_id, 0 AS level
@@ -930,9 +1507,135 @@ spark.sql("""
 """)
 ```
 
+### All Subordinates - Direct & Indirect (Top-Down)
+
+```sql
+-- SQL
+WITH RECURSIVE subordinates AS (
+    SELECT emp_id, name, manager_id
+    FROM employees
+    WHERE emp_id = 456  -- Manager's ID
+
+    UNION ALL
+
+    SELECT e.emp_id, e.name, e.manager_id
+    FROM employees e
+    JOIN subordinates s ON e.manager_id = s.emp_id
+)
+SELECT * FROM subordinates WHERE emp_id != 456;
+```
+
+### Category Path Building
+
+```sql
+-- SQL
+WITH RECURSIVE category_path AS (
+    SELECT
+        category_id, category_name, parent_id,
+        category_name AS path
+    FROM categories
+    WHERE parent_id IS NULL
+
+    UNION ALL
+
+    SELECT
+        c.category_id, c.category_name, c.parent_id,
+        cp.path || ' > ' || c.category_name
+    FROM categories c
+    JOIN category_path cp ON c.parent_id = cp.category_id
+)
+SELECT * FROM category_path;
+```
+
+### Direction Templates
+
+```sql
+-- TOP-DOWN: Root to leaves (find children)
+WHERE parent_id IS NULL          -- Start at root
+JOIN ON t.parent_id = h.id       -- Find children
+
+-- BOTTOM-UP: Leaf to root (find parents)
+WHERE id = specific_leaf         -- Start at leaf
+JOIN ON h.parent_id = t.id       -- Find parents
+
+-- SIBLINGS: Same parent
+SELECT t2.*
+FROM table_name t1
+JOIN table_name t2 ON t1.parent_id = t2.parent_id
+WHERE t1.id = specific_id AND t2.id != specific_id;
+```
+
+### Cycle Detection
+
+```sql
+-- SQL: Always add cycle protection in recursive CTEs!
+WITH RECURSIVE hierarchy AS (
+    SELECT id, parent_id, ARRAY[id] AS path
+    FROM table_name
+    WHERE parent_id IS NULL
+
+    UNION ALL
+
+    SELECT t.id, t.parent_id, h.path || t.id
+    FROM table_name t
+    JOIN hierarchy h ON t.parent_id = h.id
+    WHERE NOT (t.id = ANY(h.path))      -- Prevent cycles
+      AND ARRAY_LENGTH(h.path, 1) < 100 -- Depth limit
+)
+SELECT * FROM hierarchy;
+```
+
 ---
 
-## 12. Pattern Matching & Sequences
+## 12. Self-Referencing Problems
+
+### When to Use Each Approach
+
+| Scenario                   | Approach                 | Why                  |
+|----------------------------|--------------------------|----------------------|
+| Compare to previous/next   | Window function (LAG/LEAD) | More efficient     |
+| Find duplicates            | Self-join with id < id   | Classic pattern      |
+| All pairs comparison       | Self-join with id != id  | Need all combos      |
+| Running comparisons        | Window function          | Single pass          |
+
+### Find Duplicate Records via Self-Join
+
+```sql
+-- SQL: a.id < b.id prevents double counting
+SELECT a.*
+FROM records a
+JOIN records b ON a.email = b.email AND a.id < b.id;
+```
+
+```python
+# PySpark
+df.alias("a").join(
+    df.alias("b"),
+    (F.col("a.email") == F.col("b.email")) & (F.col("a.id") < F.col("b.id")),
+    "inner"
+)
+```
+
+### Customers Who Bought Same Product Multiple Times
+
+```sql
+-- SQL
+SELECT customer_id, product_id, COUNT(*) AS times_purchased
+FROM purchases
+GROUP BY customer_id, product_id
+HAVING COUNT(*) > 1;
+```
+
+```python
+# PySpark
+df.groupBy("customer_id", "product_id") \
+  .agg(F.count("*").alias("times_purchased")) \
+  .filter(F.col("times_purchased") > 1)
+```
+
+---
+
+## 13. Pattern Matching & Sequences
 
 ### Find Sequence: View -> Add to Cart -> Purchase
 
@@ -967,6 +1670,36 @@ users_converted = (df
 )
 ```
 
+### Stock Went Up 3 Days in a Row
+
+```sql
+-- SQL
+WITH price_changes AS (
+    SELECT
+        date, close_price,
+        LAG(close_price, 1) OVER (ORDER BY date) AS prev_1,
+        LAG(close_price, 2) OVER (ORDER BY date) AS prev_2
+    FROM stock_prices
+)
+SELECT date
+FROM price_changes
+WHERE close_price > prev_1 AND prev_1 > prev_2;
+```
+
+```python
+# PySpark
+window_spec = Window.orderBy("date")
+
+three_day_up = (df
+    .withColumn("prev_1", F.lag("close_price", 1).over(window_spec))
+    .withColumn("prev_2", F.lag("close_price", 2).over(window_spec))
+    .filter(
+        (F.col("close_price") > F.col("prev_1")) &
+        (F.col("prev_1") > F.col("prev_2"))
+    )
+)
+```
+
 ### 3+ Consecutive Failed Logins
 
 ```sql
@@ -998,7 +1731,103 @@ flagged_users = (df
 
 ---
 
-## 13. Data Quality & Validation
+## 14. Graph/Network Problems
+
+### Key Pattern: BFS/DFS Traversal
+
+```sql
+-- SQL: Find connections (BFS/DFS)
+WITH RECURSIVE connections AS (
+    SELECT node_id, 0 AS distance, ARRAY[node_id] AS path
+    FROM nodes
+    WHERE node_id = start_node
+
+    UNION
+
+    SELECT
+        e.to_node,
+        c.distance + 1,
+        c.path || e.to_node
+    FROM connections c
+    JOIN edges e ON c.node_id = e.from_node
+    WHERE NOT (e.to_node = ANY(c.path))  -- Avoid cycles
+      AND c.distance < max_distance
+)
+SELECT * FROM connections;
+```
+
+### Shortest Path in Social Network
+
+```sql
+-- SQL
+WITH RECURSIVE friend_path AS (
+    SELECT
+        user_id, friend_id,
+        1 AS degree,
+        ARRAY[user_id, friend_id] AS path
+    FROM friendships
+    WHERE user_id = 123
+
+    UNION
+
+    SELECT
+        fp.user_id, f.friend_id,
+        fp.degree + 1,
+        fp.path || f.friend_id
+    FROM friend_path fp
+    JOIN friendships f ON fp.friend_id = f.user_id
+    WHERE NOT (f.friend_id = ANY(fp.path))
+      AND fp.degree < 6  -- 6 degrees of separation
+)
+SELECT *
+FROM friend_path
+WHERE friend_id = 456
+ORDER BY degree
+LIMIT 1;
+```
+
+```python
+# PySpark: Use GraphFrames library for graph problems
+# pip install graphframes
+
+from graphframes import GraphFrame
+
+vertices = spark.createDataFrame([
+    ("1", "Alice"), ("2", "Bob"), ("3", "Carol")
+], ["id", "name"])
+
+edges = spark.createDataFrame([
+    ("1", "2", "friend"), ("2", "3", "friend")
+], ["src", "dst", "relationship"])
+
+g = GraphFrame(vertices, edges)
+
+# Shortest paths
+results = g.shortestPaths(landmarks=["3"])
+
+# BFS
+paths = g.bfs(fromExpr="id = '1'", toExpr="id = '3'", maxPathLength=6)
+
+# Or use iterative joins (same pattern as hierarchical queries)
+```
+
+### Find All Reachable Nodes
+
+```sql
+-- SQL
+WITH RECURSIVE reachable AS (
+    SELECT node_id FROM nodes WHERE node_id = 1
+    UNION
+    SELECT e.to_node
+    FROM edges e
+    JOIN reachable r ON e.from_node = r.node_id
+)
+SELECT node_id FROM reachable;
+```
+
+---
+
+## 15. Data Quality & Validation
 
 ### Null Checks
 
@@ -1014,6 +1843,13 @@ FROM table_name;
 # PySpark
 null_counts = df.select([
     F.count(F.when(F.col(c).isNull(), c)).alias(c)
+    for c in df.columns
+])
+
+# With percentages
+total_rows = df.count()
+null_pcts = df.select([
+    (F.count(F.when(F.col(c).isNull(), c)) / total_rows * 100).alias(f"{c}_null_pct")
     for c in df.columns
 ])
 ```
@@ -1046,11 +1882,186 @@ WHERE email !~ '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$';
 invalid_emails = df.filter(
     ~F.col("email").rlike(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 )
+
+invalid_phone = df.filter(
+    ~F.col("phone").rlike(r'^\d{3}-\d{3}-\d{4}$')
+)
+```
+
+### Cross-Field Validation
+
+```python
+# PySpark: Validate relationships between columns
+invalid_combinations = df.filter(
+    (F.col("end_date") < F.col("start_date")) |
+    (F.col("discounted_price") > F.col("original_price")) |
+    ((F.col("status") == "shipped") & (F.col("shipped_date").isNull()))
+)
+```
+
+### Schema Validation (PySpark)
+
+```python
+from pyspark.sql.types import StructType, StructField, IntegerType, StringType
+
+expected_schema = StructType([
+    StructField("id", IntegerType(), False),
+    StructField("name", StringType(), False),
+    StructField("email", StringType(), True),
+    StructField("age", IntegerType(), True)
+])
+
+def validate_schema(df, expected_schema):
+    """Validate DataFrame schema against expected"""
+    issues = []
+    expected_cols = set([f.name for f in expected_schema.fields])
+    actual_cols = set(df.columns)
+
+    missing = expected_cols - actual_cols
+    extra = actual_cols - expected_cols
+
+    if missing: issues.append(f"Missing columns: {missing}")
+    if extra: issues.append(f"Extra columns: {extra}")
+
+    for field in expected_schema.fields:
+        if field.name in df.columns:
+            actual_type = dict(df.dtypes)[field.name]
+            expected_type = str(field.dataType).lower()
+            if actual_type != expected_type:
+                issues.append(f"Column {field.name}: expected {expected_type}, got {actual_type}")
+    return issues
+```
+
+### DataValidator Framework (PySpark)
+
+```python
+class DataValidator:
+    def __init__(self, df):
+        self.df = df
+        self.errors = []
+
+    def check_nulls(self, columns, threshold=0.1):
+        total = self.df.count()
+        for col in columns:
+            null_count = self.df.filter(F.col(col).isNull()).count()
+            null_pct = null_count / total
+            if null_pct > threshold:
+                self.errors.append(
+                    f"{col}: {null_pct*100:.2f}% nulls (threshold: {threshold*100}%)")
+
+    def check_duplicates(self, key_columns):
+        dup_count = (self.df.groupBy(key_columns).count()
+            .filter(F.col("count") > 1).count())
+        if dup_count > 0:
+            self.errors.append(f"Found {dup_count} duplicate keys on {key_columns}")
+
+    def check_range(self, column, min_val=None, max_val=None):
+        if min_val is not None:
+            invalid = self.df.filter(F.col(column) < min_val).count()
+            if invalid > 0:
+                self.errors.append(f"{column}: {invalid} values below {min_val}")
+        if max_val is not None:
+            invalid = self.df.filter(F.col(column) > max_val).count()
+            if invalid > 0:
+                self.errors.append(f"{column}: {invalid} values above {max_val}")
+
+    def check_referential_integrity(self, ref_df, key_column):
+        orphaned = self.df.join(ref_df, key_column, "left_anti").count()
+        if orphaned > 0:
+            self.errors.append(f"Found {orphaned} orphaned records (no matching {key_column})")
+
+    def get_report(self):
+        if self.errors:
+            return {"status": "FAILED", "errors": self.errors}
+        return {"status": "PASSED", "errors": []}
+
+# Usage
+validator = DataValidator(df)
+validator.check_nulls(["customer_id", "order_date"], threshold=0.05)
+validator.check_duplicates(["order_id"])
+validator.check_range("age", min_val=0, max_val=120)
+validator.check_referential_integrity(customers_df, "customer_id")
+report = validator.get_report()
 ```
 
 ---
 
-## 14. String Operations
+## 16. Column Transformations
+
+### Type Casting
+
+```sql
+-- SQL
+SELECT CAST(price AS DECIMAL(10,2)), CAST(quantity AS INTEGER)
+FROM orders;
+```
+
+```python
+# PySpark
+df.withColumn("price_decimal", F.col("price").cast("decimal(10,2)")) \
+  .withColumn("quantity_int", F.col("quantity").cast("integer")) \
+  .withColumn("timestamp_ts", F.col("timestamp_string").cast("timestamp"))
+```
+
+### Array & Struct Operations (PySpark-Specific)
+
+```python
+# Split string to array
+df.withColumn("tags_array", F.split(F.col("tags"), ","))
+
+# Array operations
+df.withColumn("num_tags", F.size(F.col("tags_array")))
+df.withColumn("has_premium", F.array_contains(F.col("tags_array"), "premium"))
+
+# Explode array to rows
+df.withColumn("tag", F.explode(F.col("tags_array")))
+```
+
+### JSON Parsing (PySpark-Specific)
+
+```python
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType
+
+json_schema = StructType([
+    StructField("name", StringType()),
+    StructField("age", IntegerType())
+])
+
+df_json = df.withColumn(
+    "parsed_json", F.from_json(F.col("json_string"), json_schema)
+).withColumn("name", F.col("parsed_json.name")) \
+ .withColumn("age", F.col("parsed_json.age"))
+```
+
+### Complex Conditional Logic
+
+```sql
+-- SQL
+SELECT *,
+    CASE
+        WHEN age < 25 AND income < 30000 THEN 'High Risk'
+        WHEN age >= 25 AND age < 40 AND credit_score > 700 THEN 'Low Risk'
+        WHEN credit_score < 600 THEN 'High Risk'
+        ELSE 'Medium Risk'
+    END AS risk_category
+FROM customers;
+```
+
+```python
+# PySpark
+df.withColumn(
+    "risk_category",
+    F.when((F.col("age") < 25) & (F.col("income") < 30000), "High Risk")
+    .when((F.col("age") >= 25) & (F.col("age") < 40) &
+          (F.col("credit_score") > 700), "Low Risk")
+    .when(F.col("credit_score") < 600, "High Risk")
+    .otherwise("Medium Risk")
+)
+```
+
+---
+
+## 17. String Operations
 
 | Operation        | SQL                                        | PySpark                                               |
 |------------------|--------------------------------------------|-------------------------------------------------------|
@@ -1058,20 +2069,43 @@ invalid_emails = df.filter(
 | Lower case       | `LOWER(col)`                               | `F.lower("col")`                                      |
 | Title case       | `INITCAP(col)`                             | `F.initcap("col")`                                    |
 | Trim             | `TRIM(col)`                                | `F.trim("col")`                                       |
+| Left trim        | `LTRIM(col)`                               | `F.ltrim("col")`                                      |
+| Right trim       | `RTRIM(col)`                               | `F.rtrim("col")`                                      |
 | Concat           | `CONCAT(a, ' ', b)`                        | `F.concat(F.col("a"), F.lit(" "), F.col("b"))`        |
 | Concat with sep  | `CONCAT_WS('\|', a, b, c)`                | `F.concat_ws("\|", F.col("a"), F.col("b"), F.col("c"))` |
 | Substring        | `SUBSTRING(col, 1, 5)`                     | `F.substring("col", 1, 5)`                            |
 | Replace          | `REPLACE(col, 'old', 'new')`               | `F.regexp_replace("col", "old", "new")`               |
+| Char replace     | `TRANSLATE(col, 'abc', '123')`             | `F.translate("col", "abc", "123")`                     |
 | Regex extract    | `REGEXP_MATCHES(col, pattern)`             | `F.regexp_extract("col", pattern, 1)`                 |
 | Length           | `LENGTH(col)`                              | `F.length("col")`                                     |
 | Left pad         | `LPAD(col, 10, '0')`                       | `F.lpad("col", 10, "0")`                              |
+| Right pad        | `RPAD(col, 10, ' ')`                       | `F.rpad("col", 10, " ")`                              |
 | Split            | `SPLIT_PART(col, ',', 1)`                  | `F.split("col", ",").getItem(0)`                      |
 | Contains         | `col LIKE '%text%'`                        | `F.col("col").contains("text")`                       |
 | Starts with      | `col LIKE 'prefix%'`                       | `F.col("col").startswith("prefix")`                   |
 
+### String Parsing Example
+
+```sql
+-- SQL
+SELECT
+    SPLIT_PART(full_name, ' ', 1) AS first_name,
+    SPLIT_PART(full_name, ' ', 2) AS last_name,
+    SUBSTRING(email FROM '@(.+)$') AS email_domain
+FROM users;
+```
+
+```python
+# PySpark
+df.withColumn("first_name", F.split(F.col("full_name"), " ").getItem(0)) \
+  .withColumn("last_name", F.split(F.col("full_name"), " ").getItem(1)) \
+  .withColumn("email_domain", F.regexp_extract(F.col("email"), r'@(.+)$', 1)) \
+  .withColumn("phone_cleaned", F.regexp_replace(F.col("phone"), r'[^\d]', ''))
+```
+
 ---
 
-## 15. Date Operations
+## 18. Date Operations
 
 | Operation        | SQL                                        | PySpark                                         |
 |------------------|--------------------------------------------|-------------------------------------------------|
@@ -1088,9 +2122,32 @@ invalid_emails = df.filter(
 | To timestamp     | `TO_TIMESTAMP(str, format)`                | `F.to_timestamp("col", "yyyy-MM-dd HH:mm:ss")` |
 | Format           | `TO_CHAR(date, 'YYYY-MM')`                | `F.date_format("date", "yyyy-MM")`              |
 
+### Date Transformation Example
+
+```sql
+-- SQL
+SELECT
+    order_date,
+    EXTRACT(YEAR FROM order_date) AS order_year,
+    EXTRACT(MONTH FROM order_date) AS order_month,
+    EXTRACT(QUARTER FROM order_date) AS order_quarter,
+    CURRENT_DATE - order_date AS days_since_order,
+    CASE WHEN EXTRACT(DOW FROM order_date) IN (0, 6) THEN true ELSE false END AS is_weekend
+FROM orders;
+```
+
+```python
+# PySpark
+df.withColumn("order_year", F.year("order_date")) \
+  .withColumn("order_month", F.month("order_date")) \
+  .withColumn("order_quarter", F.quarter("order_date")) \
+  .withColumn("days_since_order", F.datediff(F.current_date(), F.col("order_date"))) \
+  .withColumn("is_weekend", F.dayofweek("order_date").isin([1, 7]))  # Sun=1, Sat=7
+```
+
 ---
 
-## 16. Performance Optimization
+## 19. Performance Optimization
 
 | Tip                          | SQL                                        | PySpark                                    |
 |------------------------------|--------------------------------------------|--------------------------------------------|
@@ -1104,10 +2161,231 @@ invalid_emails = df.filter(
 | Index / Partition columns    | `CREATE INDEX` on JOIN/WHERE cols          | `.repartition(200, "key_col")`             |
 | Avoid row-by-row processing  | Set-based operations                       | Built-in functions over Python UDFs        |
 | Avoid collect on large data  | N/A                                        | Aggregate first, then `.collect()`         |
+| CTE materialization          | Consider temp tables for complex CTEs      | `.cache()` intermediate DataFrames         |
+| Partition pruning            | Filter on partitioned columns              | Filter on partition columns first          |
+
+### PySpark Performance: Cache Strategically
+
+```python
+# ❌ BAD: Cache too early (caching huge unfiltered data)
+df_cached = df.cache()
+df_filtered = df_cached.filter(F.col("active") == True)  # Only 1% of data
+
+# ✅ GOOD: Cache after filtering
+df_filtered = df.filter(F.col("active") == True).cache()
+# Now df_filtered is smaller and cached
+
+# Always unpersist when done
+df_filtered.unpersist()
+```
+
+### PySpark Performance: Avoid UDFs When Possible
+
+```python
+# ❌ SLOW: Python UDF (serializes data to Python, processes row-by-row)
+from pyspark.sql.types import StringType
+
+def categorize_udf(value):
+    if value > 100: return "High"
+    elif value > 50: return "Medium"
+    else: return "Low"
+
+categorize = F.udf(categorize_udf, StringType())
+df.withColumn("category", categorize(F.col("value")))
+
+# ✅ FAST: Built-in functions (runs in JVM, vectorized)
+df.withColumn(
+    "category",
+    F.when(F.col("value") > 100, "High")
+    .when(F.col("value") > 50, "Medium")
+    .otherwise("Low")
+)
+```
+
+### PySpark Performance: Partition Pruning
+
+```python
+# ❌ BAD: Scans all partitions
+df_partitioned.filter(F.col("amount") > 100)
+
+# ✅ GOOD: Filter on partition column first
+df_partitioned.filter(
+    (F.col("date") == "2024-01-01") &  # Partition column - enables pruning
+    (F.col("amount") > 100)
+)
+```
+
+### PySpark Performance: Optimize Multiple Aggregations
+
+```python
+# ❌ BAD: Multiple passes over data
+count1 = df.filter(F.col("type") == "A").count()
+count2 = df.filter(F.col("type") == "B").count()
+count3 = df.filter(F.col("type") == "C").count()
+
+# ✅ GOOD: Single pass
+result = df.groupBy("type").count().collect()
+counts = {row['type']: row['count'] for row in result}
+```
+
+### PySpark Performance: Avoid collect() on Large Data
+
+```python
+# ❌ BAD: Brings all data to driver - OOM risk
+all_data = df.collect()
+
+# ✅ GOOD: Aggregate first, then collect small result
+summary = df.agg(F.sum("amount")).collect()
+
+# Or process iteratively
+for row in df.toLocalIterator():
+    process(row)
+```
+
+### Performance Checklist
+
+**DO:**
+1. Cache only filtered/processed data
+2. Broadcast small tables in joins (< 10MB)
+3. Filter before joins and aggregations
+4. Select only needed columns
+5. Use built-in functions over UDFs
+6. Partition data appropriately (100-1000 partitions)
+7. Use approximate functions for large datasets
+8. Persist intermediate results used multiple times
+
+**DON'T:**
+1. Cache entire large datasets unnecessarily
+2. Use collect() on large DataFrames
+3. Create too many or too few partitions
+4. Use Python UDFs when SQL functions work
+5. Join without considering table sizes
+6. Process data row-by-row (use batch operations)
+7. Ignore data skew
+8. Chain many operations without caching intermediate results
 
 ---
 
-## 17. Quick Translation Guide
+## 20. Advanced PySpark Patterns (UDFs, Caching, Broadcast)
+
+### Simple UDF
+
+```python
+from pyspark.sql.types import StringType
+
+def categorize(value):
+    if value > 100: return "High"
+    elif value > 50: return "Medium"
+    return "Low"
+
+categorize_udf = F.udf(categorize, StringType())
+df.withColumn("category", categorize_udf(F.col("amount")))
+```
+
+### Pandas UDF (Vectorized - Much Faster)
+
+```python
+from pyspark.sql.functions import pandas_udf
+from pyspark.sql.types import DoubleType
+import pandas as pd
+import numpy as np
+
+@pandas_udf(DoubleType())
+def vectorized_calc(a: pd.Series, b: pd.Series, c: pd.Series) -> pd.Series:
+    return np.sqrt(a**2 + b**2) / c.replace(0, np.nan)
+
+df.withColumn("result", vectorized_calc(F.col("a"), F.col("b"), F.col("c")))
+```
+
+### Struct Return Type UDF
+
+```python
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType
+
+schema = StructType([
+    StructField("parsed_name", StringType()),
+    StructField("name_length", IntegerType())
+])
+
+@F.udf(schema)
+def parse_name(name):
+    return {
+        "parsed_name": name.upper() if name else None,
+        "name_length": len(name) if name else 0
+    }
+
+df.withColumn("name_info", parse_name(F.col("name"))) \
+  .withColumn("parsed_name", F.col("name_info.parsed_name")) \
+  .withColumn("name_length", F.col("name_info.name_length"))
+```
+
+### Broadcast Variable with UDF
+
+```python
+# For large lookup dictionaries used inside UDFs
+lookup_dict = {"A": 1, "B": 2, "C": 3}
+broadcast_dict = spark.sparkContext.broadcast(lookup_dict)
+
+@F.udf(IntegerType())
+def lookup_value(key):
+    return broadcast_dict.value.get(key, 0)
+
+df.withColumn("value", lookup_value(F.col("category")))
+```
+
+### Caching Pattern
+
+```python
+# Cache when DataFrame will be reused multiple times
+df_processed = (df
+    .filter(F.col("active") == True)
+    .withColumn("score", F.col("metric_a") * 0.7 + F.col("metric_b") * 0.3)
+    .cache()
+)
+
+# Use multiple times
+result1 = df_processed.filter(F.col("score") > 0.5)
+result2 = df_processed.groupBy("category").agg(F.avg("score"))
+
+# Always unpersist when done
+df_processed.unpersist()
+```
+
+### Accumulators for Monitoring
+
+```python
+null_counter = spark.sparkContext.accumulator(0)
+
+def count_nulls(value):
+    global null_counter
+    if value is None:
+        null_counter.add(1)
+    return value
+
+count_nulls_udf = F.udf(count_nulls, StringType())
+df.withColumn("checked", count_nulls_udf(F.col("name"))).count()
+print(f"Null values found: {null_counter.value}")
+```
+
+### Repartition vs Coalesce
+
+```python
+# repartition: Full shuffle - use when increasing partitions or for even distribution
+df.repartition(200, "customer_id")  # 200 partitions by customer_id
+
+# coalesce: No shuffle - use ONLY when reducing partitions
+df.coalesce(10)  # Reduce to 10 partitions (no shuffle)
+
+# ❌ BAD: coalesce to increase partitions (doesn't shuffle!)
+df.coalesce(200)  # Won't actually increase partitions
+
+# ✅ GOOD: repartition to increase partitions
+df.repartition(200)
+```
+
+---
+
+## 21. Quick Translation Guide
 
 | SQL                            | PySpark                                           |
 |--------------------------------|---------------------------------------------------|
@@ -1128,6 +2406,7 @@ invalid_emails = df.filter(
 | `COALESCE(a, b, c)`           | `F.coalesce(F.col("a"), F.col("b"), F.col("c"))`  |
 | `CONCAT(a, b)`                | `F.concat(F.col("a"), F.col("b"))`                |
 | `UPPER(col)`                  | `F.upper("col")`                                  |
+| `SUBSTRING(col, 1, 5)`        | `F.substring("col", 1, 5)`                        |
 | `IN (val1, val2)`             | `F.col("col").isin([val1, val2])`                  |
 | `NOT IN (...)`                | `~F.col("col").isin([...])`                        |
 | `IS NULL`                     | `F.col("col").isNull()`                            |
@@ -1138,10 +2417,93 @@ invalid_emails = df.filter(
 | `NOT EXISTS`                  | `df1.join(df2, "key", "left_anti")`                |
 | `EXISTS`                      | `df1.join(df2, "key", "left_semi")`                |
 | `UNION ALL`                   | `df1.union(df2)`                                   |
+| `EXCEPT`                      | `df1.subtract(df2)`                                |
 
 ---
 
-## 18. Interview Pattern Recognition
+## 22. Syntax Quick Reference
+
+### Window Function Syntax
+
+```sql
+-- SQL
+function_name([arguments]) OVER (
+    [PARTITION BY partition_columns]
+    [ORDER BY sort_columns]
+    [ROWS|RANGE BETWEEN frame_start AND frame_end]
+)
+```
+
+```python
+# PySpark
+from pyspark.sql.window import Window
+
+window_spec = (Window
+    .partitionBy("partition_col")
+    .orderBy("sort_col")
+    .rowsBetween(Window.unboundedPreceding, Window.currentRow)
+)
+F.sum("col").over(window_spec)
+```
+
+### CTE Syntax
+
+```sql
+-- SQL
+WITH cte_name AS (
+    SELECT ...
+),
+cte_name2 AS (
+    SELECT ... FROM cte_name ...
+)
+SELECT ... FROM cte_name2;
+```
+
+```python
+# PySpark equivalent: chain transformations or use temp views
+df_cte1 = df.filter(...)
+df_cte2 = df_cte1.join(...)
+result = df_cte2.select(...)
+
+# Or register as temp views for Spark SQL
+df.createOrReplaceTempView("table_name")
+spark.sql("WITH cte AS (...) SELECT ...")
+```
+
+### Recursive CTE Syntax
+
+```sql
+-- SQL
+WITH RECURSIVE cte_name AS (
+    -- Anchor (base case)
+    SELECT ...
+
+    UNION [ALL]
+
+    -- Recursive (iterative case)
+    SELECT ...
+    FROM cte_name
+    WHERE termination_condition
+)
+SELECT ... FROM cte_name;
+```
+
+```python
+# PySpark: Iterative loop pattern (no native recursive support in DataFrame API)
+current = df.filter(base_condition).withColumn("level", F.lit(0))
+result = current
+
+for i in range(1, max_depth):
+    next_level = current.join(df, join_condition).withColumn("level", F.lit(i))
+    if next_level.count() == 0:
+        break
+    result = result.union(next_level)
+    current = next_level
+```
+
+---
+
+## 23. Interview Pattern Recognition
 
 | Interview Phrase                 | SQL Pattern                              | PySpark Pattern                                           |
 |----------------------------------|------------------------------------------|-----------------------------------------------------------|
@@ -1157,21 +2519,88 @@ invalid_emails = df.filter(
 | "never did X"                    | `NOT EXISTS` / `LEFT JOIN NULL`          | `.join(..., "left_anti")`                                 |
 | "hierarchy" / "reporting chain"  | Recursive CTE                            | Iterative joins or Spark SQL recursive CTE                |
 | "in every category"              | `HAVING COUNT(DISTINCT) = total`         | `groupBy + countDistinct + filter`                        |
+| "friends of friends" / "network" | Recursive CTE (graph traversal)          | GraphFrames or iterative joins                            |
+| "shortest path"                  | Recursive CTE with depth limit           | GraphFrames `shortestPaths()`                             |
+| "unique values"                  | `DISTINCT`                               | `distinct()` or `dropDuplicates()`                        |
+| "similar records"                | `LEVENSHTEIN()` or fuzzy match           | `F.levenshtein()` self-join                               |
+
+### Quick Decision Tree
+
+```
+WHICH SQL/PYSPARK PATTERN DO I NEED?
+
+Need top/bottom N?
+  -> ROW_NUMBER() / RANK() / DENSE_RANK()
+  -> F.row_number().over(Window...)
+
+Compare to previous/next row?
+  -> LAG() / LEAD()
+  -> F.lag() / F.lead()
+
+Running total or moving average?
+  -> SUM/AVG() OVER (ORDER BY ... ROWS BETWEEN)
+  -> F.sum().over(Window.rowsBetween(...))
+
+Compare to group aggregate?
+  -> Window function with PARTITION BY
+  -> F.avg().over(Window.partitionBy())
+
+Find missing values in sequence?
+  -> Recursive CTE to generate series + LEFT JOIN
+  -> Generate series + left_anti join
+
+Traverse hierarchy or graph?
+  -> Recursive CTE
+  -> Iterative joins or GraphFrames
+
+Need to pivot (rows to columns)?
+  -> CASE WHEN with GROUP BY
+  -> groupBy().pivot().agg()
+
+Find duplicates?
+  -> GROUP BY ... HAVING COUNT(*) > 1
+  -> groupBy().agg(count).filter(> 1)
+
+Remove duplicates?
+  -> ROW_NUMBER() ... WHERE rn = 1
+  -> dropDuplicates() or row_number() == 1
+
+Find records NOT in another table?
+  -> NOT EXISTS or LEFT JOIN ... WHERE NULL
+  -> .join(..., "left_anti")
+
+Statistical analysis?
+  -> PERCENTILE_CONT, STDDEV, VARIANCE
+  -> percentile_approx, stddev, variance
+```
 
 ---
 
-## Common Gotchas
+## 24. Common Gotchas
 
-| Gotcha                         | SQL Solution                       | PySpark Solution                          |
-|--------------------------------|------------------------------------|-------------------------------------------|
-| NULLs in NOT IN                | `WHERE col IS NOT NULL`            | Filter nulls before `.isin()`             |
-| Division by zero               | `NULLIF(denominator, 0)`           | `F.when(F.col("d") != 0, ...)`           |
-| String concat with NULL        | `COALESCE(col, '')`               | `F.coalesce(F.col("col"), F.lit(""))`     |
-| Aggregate in WHERE             | Use `HAVING`                       | `.filter()` after `.agg()`                |
-| Window function in WHERE       | Wrap in subquery/CTE               | `.withColumn()` then `.filter()`          |
-| Column ambiguity in joins      | Table aliases `t1.col`             | `df.alias("a")` + `F.col("a.col")`       |
-| Top N per group (not overall)  | Window function, not `LIMIT`       | Window function, not `.limit()`           |
+| Gotcha                           | SQL Solution                       | PySpark Solution                          |
+|----------------------------------|------------------------------------|-------------------------------------------|
+| NULLs in NOT IN                  | `WHERE col IS NOT NULL`            | Filter nulls before `.isin()`             |
+| Division by zero                 | `NULLIF(denominator, 0)`           | `F.when(F.col("d") != 0, ...)`           |
+| String concat with NULL          | `COALESCE(col, '')`               | `F.coalesce(F.col("col"), F.lit(""))`     |
+| Aggregate in WHERE               | Use `HAVING`                       | `.filter()` after `.agg()`                |
+| Window function in WHERE         | Wrap in subquery/CTE               | `.withColumn()` then `.filter()`          |
+| Column ambiguity in joins        | Table aliases `t1.col`             | `df.alias("a")` + `F.col("a.col")`       |
+| Top N per group (not overall)    | Window function, not `LIMIT`       | Window function, not `.limit()`           |
+| Date arithmetic across timezones | Normalize to UTC first             | Convert to UTC before operations          |
+| GROUP BY with NULL keys          | NULLs form their own group         | Same behavior in PySpark                  |
+| Self-join Cartesian explosion    | Add proper join condition          | Add `id < id` or `id != id` condition     |
+| Recursive CTE infinite loop      | Add depth limit                    | Loop with `max_depth` or count check      |
+| VARCHAR comparison case-sensitive | Use `LOWER()` or `ILIKE`           | Use `F.lower()` before comparison         |
+| Using Python UDF unnecessarily   | N/A                                | Use built-in functions instead            |
+| Caching before filtering         | N/A                                | Filter first, then `.cache()`             |
+| Not unpersisting cached data     | N/A                                | Always call `.unpersist()` when done      |
+| Too many/few partitions          | N/A                                | Aim for 100-1000 partitions               |
+| collect() on large DataFrame     | N/A                                | Aggregate first, then `.collect()`        |
+| Not broadcasting small tables    | N/A                                | Use `broadcast()` for tables < 10MB       |
+| Ignoring data skew               | N/A                                | Salt keys or repartition                  |
+| Type mismatch in operations      | Explicit `CAST()`                  | Explicit `.cast()` before operations      |
 
 ---
 
-**This reference covers 95% of SQL-PySpark interview problems. Keep it handy during practice!**
+**This reference covers 95%+ of SQL-PySpark interview problems. Keep it handy during practice!**

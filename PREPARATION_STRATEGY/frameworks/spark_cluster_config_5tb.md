@@ -36,10 +36,11 @@
 26. STEP 25: AQE (Adaptive Query Execution) Settings
 27. STEP 26: Shuffle Buffer & Reducer I/O Settings
 28. STEP 27: Number of Partitions — Master Formula (5 TB)
-29. Full Calculation Summary
-30. Final spark-submit Command
-31. Scaling Formula: Any Data Size
-32. Verification Checklist
+29. STEP 28: EC2 Instance Selection — AWS Decision Framework
+30. Full Calculation Summary
+31. Final spark-submit Command
+32. Scaling Formula: Any Data Size
+33. Verification Checklist
 ```
 
 ---
@@ -997,7 +998,310 @@ KEY CONSTRAINT:
 
 ---
 
-## 29. Full Calculation Summary
+## 29. STEP 28: EC2 Instance Selection — AWS Decision Framework
+
+> Choose the right EC2 instance type BEFORE calculating any Spark parameter.
+> The instance determines M_node and C_node, which feed into every formula.
+
+### A. Instance Selection Decision Tree
+
+```
+STEP 1: Determine Workload Profile
+──────────────────────────────────────────────────────────────────────
+
+  QUESTION: What is the memory-to-core ratio you need?
+
+  IF heavy joins/caching/large shuffles (most ETL/ELT):
+    → Memory-optimized (r-series): 8 GB/core ratio
+    → Best for: 80% of Spark workloads
+
+  IF CPU-heavy transformations (parsing, regex, ML feature engineering):
+    → Compute-optimized (c-series): 2 GB/core ratio
+    → Best for: lightweight transforms on small-to-medium data
+
+  IF shuffle-heavy with massive spill (multi-way joins on 10+ TB):
+    → Storage-optimized (i-series, d-series): local NVMe SSDs
+    → Best for: shuffle-intensive jobs that spill heavily to disk
+
+  IF balanced/general ETL (moderate joins, moderate caching):
+    → General-purpose (m-series): 4 GB/core ratio
+    → Best for: cost-sensitive, non-extreme workloads
+
+STEP 2: Determine Instance Size
+──────────────────────────────────────────────────────────────────────
+
+  FORMULA:
+    required_RAM_per_node = (D × CR × SF × active_fraction) / target_nodes
+    required_cores_per_node = target_total_cores / target_nodes
+
+    WHERE:
+      D = data size in GB
+      CR = compression ratio (3 for Snappy Parquet)
+      SF = shuffle factor (2 for ETL)
+      active_fraction = 0.15 (15% of data active at any time)
+      target_nodes = chosen based on cost/performance tradeoff
+
+  FOR 5 TB:
+    required_RAM = (5,120 × 3 × 2 × 0.15) / 25 = 184 GB per node
+    → Round down: 128 GB per node is sufficient (Spark processes in stages)
+    → Instance: r5.4xlarge (16 vCPU, 128 GB) ✅
+
+  FOR 1 TB:
+    required_RAM = (1,024 × 3 × 2 × 0.15) / 8 = 115 GB per node
+    → 64 GB per node is sufficient for staged processing
+    → Instance: r5.2xlarge (8 vCPU, 64 GB) ✅
+
+  FOR 20 TB:
+    required_RAM = (20,480 × 3 × 2 × 0.15) / 85 = 217 GB per node
+    → 256 GB per node for headroom
+    → Instance: r5.8xlarge (32 vCPU, 256 GB) ✅
+```
+
+### B. AWS EC2 Instance Catalog for Spark Workloads
+
+```
+═══════════════════════════════════════════════════════════════════════
+MEMORY-OPTIMIZED (r-series) — RECOMMENDED for most Spark workloads
+═══════════════════════════════════════════════════════════════════════
+
+Instance       vCPUs  RAM(GB)  Network     Local SSD    $/hr(OD)  $/hr(Spot~)
+─────────────  ─────  ───────  ──────────  ──────────   ────────  ──────────
+r5.xlarge        4      32     Up to 10G   EBS only      0.252     ~0.08
+r5.2xlarge       8      64     Up to 10G   EBS only      0.504     ~0.15
+r5.4xlarge      16     128     Up to 10G   EBS only      1.008     ~0.30
+r5.8xlarge      32     256     10 Gbps     EBS only      2.016     ~0.60
+r5.12xlarge     48     384     12 Gbps     EBS only      3.024     ~0.90
+r5.16xlarge     64     512     20 Gbps     EBS only      4.032     ~1.20
+r5.24xlarge     96     768     25 Gbps     EBS only      6.048     ~1.80
+
+r5d.4xlarge     16     128     Up to 10G   2×300GB NVMe  1.152     ~0.35
+r5d.8xlarge     32     256     10 Gbps     2×600GB NVMe  2.304     ~0.69
+r5d.12xlarge    48     384     12 Gbps     2×900GB NVMe  3.456     ~1.04
+r5d.24xlarge    96     768     25 Gbps     4×900GB NVMe  6.912     ~2.07
+
+r6i.4xlarge     16     128     Up to 12.5G EBS only      1.008     ~0.30
+r6i.8xlarge     32     256     12.5 Gbps   EBS only      2.016     ~0.60
+
+r6gd.4xlarge    16     128     Up to 10G   1×950GB NVMe  0.869     ~0.26
+  (Graviton2 — 20% cheaper, ARM-based, excellent for PySpark/Spark SQL)
+
+WHY r-series for Spark:
+  - 8 GB per vCPU → executor_memory / cores_per_executor ratio is optimal
+  - Enough RAM to avoid excessive disk spill
+  - Handles joins, caching, and shuffles efficiently
+
+═══════════════════════════════════════════════════════════════════════
+STORAGE-OPTIMIZED (i-series) — For shuffle-heavy / spill-heavy jobs
+═══════════════════════════════════════════════════════════════════════
+
+Instance       vCPUs  RAM(GB)  Network     Local SSD         $/hr(OD)
+─────────────  ─────  ───────  ──────────  ─────────────     ────────
+i3.xlarge        4      30.5   Up to 10G   1×950GB NVMe       0.312
+i3.2xlarge       8      61     Up to 10G   1×1.9TB NVMe       0.624
+i3.4xlarge      16     122     Up to 10G   2×1.9TB NVMe       1.248
+i3.8xlarge      32     244     10 Gbps     4×1.9TB NVMe       2.496
+i3.16xlarge     64     488     25 Gbps     8×1.9TB NVMe       4.992
+
+i3en.6xlarge    24     192     25 Gbps     2×7.5TB NVMe       2.712
+i3en.12xlarge   48     384     50 Gbps     4×7.5TB NVMe       5.424
+i3en.24xlarge   96     768     100 Gbps    8×7.5TB NVMe      10.848
+
+WHEN TO USE i-series:
+  - Data size > 10 TB with multi-way joins (heavy shuffle spill)
+  - spark.local.dir benefits from massive local NVMe
+  - Shuffle data per node > 500 GB per stage
+
+═══════════════════════════════════════════════════════════════════════
+COMPUTE-OPTIMIZED (c-series) — For CPU-bound transformations
+═══════════════════════════════════════════════════════════════════════
+
+Instance       vCPUs  RAM(GB)  Network     Local SSD    $/hr(OD)
+─────────────  ─────  ───────  ──────────  ──────────   ────────
+c5.4xlarge      16      32     Up to 10G   EBS only      0.680
+c5.9xlarge      36      72     10 Gbps     EBS only      1.530
+c5.18xlarge     72     144     25 Gbps     EBS only      3.060
+
+WHEN TO USE c-series:
+  - Data fits mostly in memory (< 500 GB)
+  - CPU-heavy: parsing, regex extraction, ML feature engineering
+  - Low shuffle, low caching requirements
+  - CAUTION: only 2 GB/core → limited memory for joins/caching
+
+═══════════════════════════════════════════════════════════════════════
+GENERAL-PURPOSE (m-series) — Balanced / cost-sensitive
+═══════════════════════════════════════════════════════════════════════
+
+Instance       vCPUs  RAM(GB)  Network     Local SSD    $/hr(OD)
+─────────────  ─────  ───────  ──────────  ──────────   ────────
+m5.4xlarge      16      64     Up to 10G   EBS only      0.768
+m5.8xlarge      32     128     10 Gbps     EBS only      1.536
+m5.12xlarge     48     192     12 Gbps     EBS only      2.304
+m5.16xlarge     64     256     20 Gbps     EBS only      3.072
+
+m5d.4xlarge     16      64     Up to 10G   2×300GB NVMe  0.904
+m5d.8xlarge     32     128     10 Gbps     2×300GB NVMe  1.808
+
+WHEN TO USE m-series:
+  - Budget-constrained clusters
+  - Moderate joins, moderate caching (balanced workloads)
+  - 4 GB/core — less headroom than r-series but cheaper
+```
+
+### C. Instance Selection Formula — Any Data Size
+
+```
+FORMULA:
+  1. Determine workload_type:
+     ETL with joins/agg    → series = "r"  (8 GB/core)
+     CPU-heavy transforms  → series = "c"  (2 GB/core)
+     Shuffle-heavy (>10TB) → series = "i"  (local NVMe critical)
+     Budget-sensitive       → series = "m"  (4 GB/core)
+
+  2. Calculate minimum RAM per node:
+     min_RAM_per_node = max(
+       64,                                          # floor: 64 GB minimum for Spark
+       (D_GB × CR × SF × active_fraction) / nodes   # from workload
+     )
+
+  3. Select instance size:
+     IF min_RAM ≤ 32 GB  → r5.xlarge   (4 vCPU, 32 GB)   — small jobs
+     IF min_RAM ≤ 64 GB  → r5.2xlarge  (8 vCPU, 64 GB)   — medium jobs
+     IF min_RAM ≤ 128 GB → r5.4xlarge  (16 vCPU, 128 GB)  — large jobs (DEFAULT)
+     IF min_RAM ≤ 256 GB → r5.8xlarge  (32 vCPU, 256 GB)  — very large jobs
+     IF min_RAM ≤ 384 GB → r5.12xlarge (48 vCPU, 384 GB)  — massive jobs
+     IF min_RAM ≤ 768 GB → r5.24xlarge (96 vCPU, 768 GB)  — extreme jobs
+
+  4. Add local NVMe if:
+     shuffle_data_per_node_per_stage > 300 GB → use r5d or i3 variants
+     (avoids relying on EBS for shuffle, which adds latency)
+
+  5. Network bandwidth check:
+     IF nodes > 50 → need ≥ 10 Gbps dedicated (not "up to")
+     IF nodes > 100 → need ≥ 25 Gbps → use .12xlarge or larger
+```
+
+### D. Data Size → Instance Type Recommendation Table
+
+```
+┌───────────┬──────────────────────────────────────────────────────────────────────────────┐
+│ Data Size │ Recommended Instance & Cluster Configuration                                 │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.xlarge (4 vCPU, 32 GB)                                     │
+│ < 100 GB  │ Nodes:        2–3                                                            │
+│           │ Executors:    2–3 (1 per node, 3 cores each)                                 │
+│           │ Use case:     Dev/test, small batch ETL                                      │
+│           │ Alt:          m5.xlarge for budget savings                                   │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.2xlarge (8 vCPU, 64 GB)                                    │
+│ 100 GB –  │ Nodes:        3–5                                                            │
+│ 500 GB    │ Executors:    3–5 (1 per node, 5 cores each)                                 │
+│           │ Use case:     Daily batch ETL, dimension table processing                   │
+│           │ Alt:          r6gd.2xlarge (Graviton, 20% cheaper)                           │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.4xlarge (16 vCPU, 128 GB)                                  │
+│ 500 GB –  │ Nodes:        5–15                                                           │
+│ 2 TB      │ Executors:    15–45 (3 per node)                                             │
+│           │ Use case:     Production ETL, multi-table joins                              │
+│           │ Alt:          r5d.4xlarge if shuffle-heavy (adds 600 GB NVMe)                │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.4xlarge (16 vCPU, 128 GB) ← SWEET SPOT                    │
+│ 2 TB –    │ Nodes:        15–30                                                          │
+│ 5 TB      │ Executors:    45–90 (3 per node)                                             │
+│ (current) │ Use case:     Large-scale ETL, data lake processing                         │
+│           │ Alt:          r5d.4xlarge for shuffle-heavy workloads                        │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.8xlarge (32 vCPU, 256 GB)                                  │
+│ 5 TB –    │ Nodes:        25–50                                                          │
+│ 10 TB     │ Executors:    150–300 (6 per node)                                           │
+│           │ Use case:     Enterprise data warehouse, large fact tables                   │
+│           │ Alt:          i3.8xlarge if shuffle spill > 500 GB/node                      │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.8xlarge or r5.12xlarge (48 vCPU, 384 GB)                   │
+│ 10 TB –   │ Nodes:        50–100                                                         │
+│ 20 TB     │ Executors:    300–900 (6–9 per node)                                         │
+│           │ Use case:     Multi-petabyte lake, cross-dataset joins                       │
+│           │ Alt:          i3.8xlarge + r5.8xlarge mixed fleet                            │
+│           │ Network:      MUST use ≥ 10 Gbps dedicated instances                        │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.12xlarge or r5.24xlarge (96 vCPU, 768 GB)                  │
+│ 20 TB –   │ Nodes:        100–250                                                        │
+│ 50 TB     │ Executors:    900–2,250                                                      │
+│           │ Use case:     Massive aggregation, ML feature stores                         │
+│           │ Alt:          i3en.12xlarge (30 TB NVMe per node)                            │
+│           │ Network:      MUST use ≥ 25 Gbps instances                                  │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┤
+│           │ Instance:     r5.24xlarge (96 vCPU, 768 GB) or i3en.24xlarge                │
+│ 50 TB –   │ Nodes:        250–500+                                                       │
+│ 100 TB    │ Executors:    2,250–4,500+                                                   │
+│           │ Use case:     Planet-scale analytics, log processing                         │
+│           │ Strategy:     Multi-job pipeline; partition data, process in stages           │
+│           │ Network:      MUST use 100 Gbps (i3en.24xlarge) or placement groups          │
+└───────────┴──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### E. Cost Estimation Formula
+
+```
+FORMULA:
+  hourly_cluster_cost = nodes × instance_hourly_rate
+  job_cost = hourly_cluster_cost × estimated_runtime_hours
+
+FOR 5 TB on r5.4xlarge:
+  On-Demand:  25 nodes × $1.008/hr = $25.20/hr
+  Spot (~70% savings): 25 nodes × $0.30/hr = $7.50/hr
+  EMR surcharge: +15% → On-Demand = $28.98/hr, Spot = $8.63/hr
+
+  Estimated runtime for 5 TB ETL: 1–3 hours
+  Job cost (Spot + EMR): $8.63 × 2 hrs = $17.26 per run
+
+QUICK COST TABLE:
+  ┌───────────┬────────────┬───────────────┬────────────────┬──────────────────┐
+  │ Data Size │ Instance   │ Nodes         │ $/hr (Spot+EMR)│ Est. Job Cost    │
+  ├───────────┼────────────┼───────────────┼────────────────┼──────────────────┤
+  │ 100 GB    │ r5.xlarge  │ 3             │ $0.28          │ $0.14  (30 min)  │
+  │ 500 GB    │ r5.2xlarge │ 5             │ $0.86          │ $0.72  (50 min)  │
+  │ 1 TB      │ r5.4xlarge │ 8             │ $2.76          │ $2.76  (1 hr)    │
+  │ 5 TB      │ r5.4xlarge │ 25            │ $8.63          │ $17.26 (2 hrs)   │
+  │ 10 TB     │ r5.8xlarge │ 45            │ $31.05         │ $93.15 (3 hrs)   │
+  │ 20 TB     │ r5.8xlarge │ 85            │ $58.65         │ $234.60 (4 hrs)  │
+  │ 50 TB     │ r5.12xlarge│ 200           │ $207.00        │ $1,035  (5 hrs)  │
+  │ 100 TB    │ r5.24xlarge│ 380           │ $787.32        │ $5,511  (7 hrs)  │
+  └───────────┴────────────┴───────────────┴────────────────┴──────────────────┘
+
+  NOTE: Spot prices fluctuate; estimates use ~70% discount from On-Demand.
+        EMR adds ~15% surcharge. Databricks adds ~30-50% DBU surcharge.
+```
+
+### F. EMR vs Databricks vs Dataproc — Platform Comparison
+
+```
+┌──────────────────┬─────────────────────┬─────────────────────┬─────────────────────┐
+│                  │ AWS EMR             │ Databricks (AWS)    │ GCP Dataproc        │
+├──────────────────┼─────────────────────┼─────────────────────┼─────────────────────┤
+│ Instance types   │ Any EC2 instance    │ Any EC2 instance    │ GCE machine types   │
+│ Surcharge        │ ~15% over EC2       │ ~30-50% DBU cost    │ ~40% cheaper than   │
+│                  │                     │                     │ equivalent EC2      │
+│ Spot/Preemptible │ Spot instances      │ Spot instances      │ Preemptible VMs     │
+│ Auto-scaling     │ EMR Managed Scaling │ Autoscale (built-in)│ Autoscaling policy  │
+│ Delta Lake       │ Manual setup        │ Native (optimized)  │ Manual setup        │
+│ Best for         │ Cost-sensitive,     │ Performance,        │ GCP-native,         │
+│                  │ YARN-based          │ collaborative       │ budget-friendly     │
+├──────────────────┼─────────────────────┼─────────────────────┼─────────────────────┤
+│ Equivalent       │ r5.4xlarge          │ r5.4xlarge          │ n2-highmem-16       │
+│ to 128 GB node   │ (16 vCPU, 128 GB)  │ (16 vCPU, 128 GB)  │ (16 vCPU, 128 GB)  │
+│                  │ $1.16/hr (w/ EMR)   │ $1.51/hr (w/ DBU)  │ $0.96/hr            │
+└──────────────────┴─────────────────────┴─────────────────────┴─────────────────────┘
+
+EQUIVALENT INSTANCES ACROSS CLOUDS:
+  AWS r5.4xlarge    ↔  GCP n2-highmem-16    ↔  Azure E16s_v5
+  AWS r5.8xlarge    ↔  GCP n2-highmem-32    ↔  Azure E32s_v5
+  AWS r5.12xlarge   ↔  GCP n2-highmem-48    ↔  Azure E48s_v5
+  AWS i3.8xlarge    ↔  GCP n2-standard-32 + local SSD  ↔  Azure L32s_v3
+```
+
+---
+
+## 30. Full Calculation Summary
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1010,6 +1314,10 @@ KEY CONSTRAINT:
 │  In-Memory Size ..................... 15 TB (3x compression ratio)           │
 │  Peak with Shuffle .................. 30 TB (2x shuffle factor)             │
 │  Node Type .......................... r5.4xlarge (16 cores, 128 GB)         │
+│  Instance Series ................... Memory-optimized (r-series, 8 GB/core)│
+│  Why r5.4xlarge .................... 128 GB fits 3 executors × 40 GB each  │
+│  Alt (shuffle-heavy) ............... r5d.4xlarge (adds 600 GB NVMe)        │
+│  Alt (budget) ...................... r6gd.4xlarge (Graviton, 20% cheaper)  │
 │                                                                             │
 │  CLUSTER                                                                    │
 │  ───────                                                                    │
@@ -1094,7 +1402,7 @@ KEY CONSTRAINT:
 
 ---
 
-## 30. Final spark-submit Command
+## 31. Final spark-submit Command
 
 ```bash
 spark-submit \
@@ -1182,7 +1490,7 @@ spark-submit \
 
 ---
 
-## 31. Scaling Formula: Any Data Size
+## 32. Scaling Formula: Any Data Size
 
 Replace `D` with your data size and recalculate every parameter:
 
@@ -1193,6 +1501,15 @@ GIVEN:
   SF = shuffle factor (2 for ETL, 3 for heavy joins)
   M_node = RAM per node in GB
   C_node = cores per node
+
+SELECT INSTANCE:
+  IF D ≤ 0.5 TB  → r5.2xlarge  (8 vCPU, 64 GB,  M_node=64,  C_node=8)
+  IF D ≤ 2 TB    → r5.4xlarge  (16 vCPU, 128 GB, M_node=128, C_node=16)
+  IF D ≤ 10 TB   → r5.4xlarge  (16 vCPU, 128 GB, M_node=128, C_node=16) ← sweet spot
+  IF D ≤ 20 TB   → r5.8xlarge  (32 vCPU, 256 GB, M_node=256, C_node=32)
+  IF D ≤ 50 TB   → r5.12xlarge (48 vCPU, 384 GB, M_node=384, C_node=48)
+  IF D > 50 TB   → r5.24xlarge (96 vCPU, 768 GB, M_node=768, C_node=96)
+  Add "d" suffix (r5d) if shuffle_data_per_node > 300 GB (for local NVMe)
 
 CALCULATE:
   cores_per_executor     = 5  (constant)
@@ -1221,21 +1538,21 @@ CALCULATE:
 
 ### Quick Lookup Table
 
-| Data Size | Nodes (128GB) | Executors | Total Cores | Input Partitions | Shuffle Partitions | Output Partitions | Executor Mem |
-|-----------|---------------|-----------|-------------|------------------|--------------------|-------------------|--------------|
-| 100 GB    | 3             | 9         | 45          | 800              | 200                | 200               | 36g          |
-| 500 GB    | 5             | 15        | 75          | 4,096            | 500                | 1,000             | 36g          |
-| 1 TB      | 8             | 24        | 120         | 8,192            | 1,000              | 2,000             | 36g          |
-| 2 TB      | 13            | 39        | 195         | 16,384           | 2,000              | 4,000             | 36g          |
-| 5 TB      | 25            | 75        | 375         | 40,960           | 3,000              | 10,000            | 36g          |
-| 10 TB     | 45            | 135       | 675         | 81,920           | 6,000              | 20,000            | 36g          |
-| 20 TB     | 85            | 255       | 1,275       | 163,840          | 10,000             | 40,000            | 36g          |
-| 50 TB     | 200           | 600       | 3,000       | 409,600          | 25,000             | 100,000           | 36g          |
-| 100 TB    | 380           | 1,140     | 5,700       | 819,200          | 50,000             | 200,000           | 36g          |
+| Data Size | Instance Type  | Nodes | Executors | Cores | Input Part. | Shuffle Part. | Output Part. | Exec Mem | Est. Cost/hr (Spot) |
+|-----------|----------------|-------|-----------|-------|-------------|---------------|--------------|----------|---------------------|
+| 100 GB    | r5.xlarge      | 3     | 3         | 9     | 800         | 200           | 200          | 24g      | $0.28               |
+| 500 GB    | r5.2xlarge     | 5     | 5         | 25    | 4,096       | 500           | 1,000        | 48g      | $0.86               |
+| 1 TB      | r5.4xlarge     | 8     | 24        | 120   | 8,192       | 1,000         | 2,000        | 36g      | $2.76               |
+| 2 TB      | r5.4xlarge     | 13    | 39        | 195   | 16,384      | 2,000         | 4,000        | 36g      | $4.49               |
+| 5 TB      | r5.4xlarge     | 25    | 75        | 375   | 40,960      | 3,000         | 10,000       | 36g      | $8.63               |
+| 10 TB     | r5.8xlarge     | 45    | 270       | 1,350 | 81,920      | 6,000         | 20,000       | 36g      | $31.05              |
+| 20 TB     | r5.8xlarge     | 85    | 510       | 2,550 | 163,840     | 10,000        | 40,000       | 36g      | $58.65              |
+| 50 TB     | r5.12xlarge    | 200   | 1,800     | 9,000 | 409,600     | 25,000        | 100,000      | 36g      | $207.00             |
+| 100 TB    | r5.24xlarge    | 380   | 7,220     | 36,100| 819,200     | 50,000        | 200,000      | 36g      | $787.32             |
 
 ---
 
-## 32. Verification Checklist
+## 33. Verification Checklist
 
 After calculating, verify every parameter passes these checks:
 

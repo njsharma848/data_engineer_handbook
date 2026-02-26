@@ -33,7 +33,8 @@ so a total of 20 parallel tasks can run.
 
 ## => 4. Let's say we read a csv file of 10.1 GB stored in datalake and have to do some filtering of data, how many tasks will run?
 
-if we create a dataframe out of 10.1 GB file we will get 81 partitions in our dataframe. (will cover in my next post on how many partitions are created)
+if we create a dataframe out of 10.1 GB file we will get 81 partitions in our dataframe.  <br>
+(will cover in my next post on how many partitions are created)
 
 so we have 81 partitions each of size 128 mb, the last partition will be a bit smaller.
 

@@ -38,11 +38,11 @@ schema = StructType([
     StructField("page", StringType())
 ])
 
-raw = spark.readStream.format("kafka").option("kafka.bootstrap.servers", "localhost:9092").option("subscribe", "clickstream").load()
+raw = spark.readStream.format("kafka")     .option("kafka.bootstrap.servers", "localhost:9092")     .option("subscribe", "clickstream")     .load()
 
-parsed = raw.select(from_json(col("value").cast("string"), schema).alias("r")).select("r.*").withColumn("event_time", to_timestamp("event_time"))
+parsed = raw.select(from_json(col("value").cast("string"), schema).alias("r")).select("r.*")     .withColumn("event_time", to_timestamp("event_time"))
 
-clean = parsed.withWatermark("event_time", "10 minutes").dropDuplicates(["event_id"])
+clean = parsed.withWatermark("event_time", "10 minutes")     .dropDuplicates(["event_id"])
 
-query = clean.writeStream.format("delta").option("checkpointLocation", "/tmp/chk/watermark_dedup").outputMode("append").start("/tmp/out/watermark_dedup")
+query = clean.writeStream     .format("delta")     .option("checkpointLocation", "/tmp/chk/watermark_dedup")     .outputMode("append")     .start("/tmp/out/watermark_dedup")
 ```

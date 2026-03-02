@@ -22,7 +22,7 @@ output = events.withColumn(
     F.sha2(F.concat_ws("||", "event_id", "event_time", "user_id"), 256)
 )
 
-query = output.writeStream.format("delta").outputMode("append").option("checkpointLocation", "/tmp/chk/exactly_once").start("/tmp/out/exactly_once")
+query = output.writeStream     .format("delta")     .outputMode("append")     .option("checkpointLocation", "/tmp/chk/exactly_once")     .start("/tmp/out/exactly_once")
 ```
 
 For strict dedup on retries, merge `record_key` into a Delta sink table instead of blind append.

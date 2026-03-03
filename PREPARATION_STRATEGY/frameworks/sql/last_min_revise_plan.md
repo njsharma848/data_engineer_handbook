@@ -1,8 +1,8 @@
 ## Python
 
+- [python_etl_essentials](https://github.com/greenwichg/de_interview_prep/tree/main/DATA_LOAD_SCENARIOS/python_etl_essentials)
 - [python/shubham_wadekar](https://github.com/greenwichg/de_interview_prep/blob/main/LEARNING_MATERIALS/shubham_wadekar/CORE%20TOPICS/PYTHON/CODING%20Q%26A/PYTHON%20-%2029%20PROGRAMS%20FOR%20DATA%20ENGINEERS.pdf)
 - [python_dsa/shubham_wadekar](https://github.com/greenwichg/de_interview_prep/blob/main/LEARNING_MATERIALS/shubham_wadekar/CORE%20TOPICS/DSA%20FOR%20DATA%20ENGINEERS/DSA%20FOR%20DATA%20ENGINEERS.pdf)
-- [python_etl_essentials](https://github.com/greenwichg/de_interview_prep/tree/main/DATA_LOAD_SCENARIOS/python_etl_essentials)
 
 ## PySpark
 - [ajay_kadiyala](https://github.com/greenwichg/de_interview_prep/blob/main/LEARNING_MATERIALS/ajay_kadiyala/core_tech_stacks/big_data_and_streaming/pyspark_interview_kit.pdf)

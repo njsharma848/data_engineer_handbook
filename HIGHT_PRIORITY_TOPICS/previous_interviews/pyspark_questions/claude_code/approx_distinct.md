@@ -1,6 +1,6 @@
 # PySpark Implementation: Approximate vs Exact Distinct Counts
 
-## Problem Statement
+## Problem Statement 
 Given a large clickstream dataset containing user page visits, compare **exact** distinct user counts
 (`countDistinct()`) against **approximate** distinct user counts (`approx_count_distinct()`) per page.
 Demonstrate the accuracy vs performance tradeoff and explain when each approach is appropriate.

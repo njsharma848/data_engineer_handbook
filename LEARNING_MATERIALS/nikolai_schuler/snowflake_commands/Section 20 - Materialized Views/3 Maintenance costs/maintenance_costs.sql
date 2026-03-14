@@ -1,0 +1,150 @@
+-- =============================================================================
+-- SECTION 20.3: MATERIALIZED VIEW MAINTENANCE COSTS
+-- =============================================================================
+--
+-- OBJECTIVE:
+--   Understand the three cost components of materialized views and learn how
+--   to monitor and optimize ongoing maintenance expenses.
+--
+-- WHAT YOU WILL LEARN:
+--   1. The three cost components of materialized views
+--   2. How to monitor refresh costs using system functions
+--   3. How to inspect MV metadata with SHOW MATERIALIZED VIEWS
+--   4. Cost optimization strategies
+--
+-- MATERIALIZED VIEW COST BREAKDOWN (CRITICAL INTERVIEW TOPIC):
+-- ┌──────────────────────┬──────────────────────────────────────────────────┐
+-- │ Cost Component       │ Description                                      │
+-- ├──────────────────────┼──────────────────────────────────────────────────┤
+-- │ 1. STORAGE           │ Storing the precomputed result set physically.  │
+-- │                      │ Larger result sets = higher storage cost.       │
+-- ├──────────────────────┼──────────────────────────────────────────────────┤
+-- │ 2. COMPUTE (refresh) │ Snowflake-managed serverless credits consumed   │
+-- │                      │ each time the MV is refreshed. More frequent    │
+-- │                      │ DML on base table = more refresh = higher cost. │
+-- ├──────────────────────┼──────────────────────────────────────────────────┤
+-- │ 3. CLOUD SERVICES    │ Overhead for managing refresh scheduling,       │
+-- │                      │ metadata tracking, and change detection.        │
+-- │                      │ Usually small but adds up at scale.             │
+-- └──────────────────────┴──────────────────────────────────────────────────┘
+--
+-- COST vs BENEFIT ANALYSIS:
+-- ┌───────────────────────────────┬────────────────────────────────────────┐
+-- │ MV is WORTH the cost when:   │ MV is NOT worth the cost when:         │
+-- ├───────────────────────────────┼────────────────────────────────────────┤
+-- │ Base table is large (100M+)  │ Base table is small (< 1M rows)       │
+-- │ Aggregation is expensive     │ Query is already fast without MV      │
+-- │ Base table changes rarely    │ Base table has constant DML           │
+-- │ Same query runs many times   │ Query runs infrequently               │
+-- │ Latency is critical          │ Slightly stale data is acceptable     │
+-- │ Many users run same report   │ Only one user runs the query          │
+-- └───────────────────────────────┴────────────────────────────────────────┘
+--
+-- KEY INTERVIEW CONCEPTS:
+--   - MVs have THREE costs: storage + compute (refresh) + cloud services
+--   - Refresh compute uses Snowflake-managed serverless credits (not your WH)
+--   - More frequent DML on base table = higher refresh costs
+--   - SHOW MATERIALIZED VIEWS displays view metadata and refresh state
+--   - information_schema.materialized_view_refresh_history() tracks costs
+--   - Always evaluate: does the query speedup justify the ongoing cost?
+-- =============================================================================
+
+
+-- =============================================
+-- STEP 1: Inspect materialized view metadata
+-- =============================================
+-- Shows all MVs in the current database/schema
+SHOW MATERIALIZED VIEWS;
+
+-- Key columns in the output:
+--   name:         Name of the materialized view
+--   database_name: Database containing the MV
+--   schema_name:  Schema containing the MV
+--   is_current:   'Y' if MV matches base table, 'N' if refresh is pending
+--   text:         The SQL definition of the MV
+--   rows:         Number of rows in the MV result set
+--   bytes:        Storage used by the MV (this is the STORAGE cost)
+
+
+-- =============================================
+-- STEP 2: Monitor refresh cost history
+-- =============================================
+-- This function provides detailed cost data for all MV refreshes
+SELECT *
+FROM TABLE(information_schema.materialized_view_refresh_history());
+
+-- Key columns to analyze:
+--   MATERIALIZED_VIEW_NAME:  Which MV was refreshed
+--   START_TIME / END_TIME:   Duration of the refresh operation
+--   CREDITS_USED:            Serverless credits consumed (this is the COMPUTE cost)
+--   NUM_ROWS_INSERTED:       Rows added to the MV during refresh
+--   NUM_ROWS_DELETED:        Rows removed from the MV during refresh
+
+-- TIP: Aggregate by day to see daily refresh costs:
+-- SELECT
+--     DATE(START_TIME)            AS refresh_date,
+--     MATERIALIZED_VIEW_NAME,
+--     COUNT(*)                    AS refresh_count,
+--     SUM(CREDITS_USED)           AS total_credits
+-- FROM TABLE(information_schema.materialized_view_refresh_history())
+-- GROUP BY refresh_date, MATERIALIZED_VIEW_NAME
+-- ORDER BY refresh_date DESC;
+
+
+-- =============================================================================
+-- CONCEPT GAP: COST OPTIMIZATION STRATEGIES
+-- =============================================================================
+-- 1. DROP UNUSED MVs:
+--    - If an MV is not being queried, it still refreshes and costs money
+--    - Regularly audit MV usage with ACCESS_HISTORY or QUERY_HISTORY
+--    - DROP MATERIALIZED VIEW <name> to eliminate unnecessary costs
+--
+-- 2. CHOOSE THE RIGHT BASE TABLE:
+--    - Avoid MVs on tables with very high DML frequency (streaming ingestion)
+--    - Best candidates: large tables with batch loads (daily/hourly)
+--
+-- 3. NARROW THE MV DEFINITION:
+--    - Use WHERE clauses to limit which rows are materialized
+--    - Smaller result set = less storage + faster refresh
+--    - Example: Materialize only the last 2 years instead of all history
+--
+-- 4. CONSIDER ALTERNATIVES:
+--    - Clustering keys: improve scan performance without MV overhead
+--    - Result caching: free, automatic for identical queries within 24 hours
+--    - Summary tables + tasks: more control over refresh timing and cost
+--    - Search optimization service: for point lookups on large tables
+-- =============================================================================
+
+
+-- =============================================================================
+-- CONCEPT GAP: MV COST MONITORING QUERIES FOR PRODUCTION
+-- =============================================================================
+-- QUERY 1: Total MV refresh credits in the last 30 days
+-- SELECT
+--     MATERIALIZED_VIEW_NAME,
+--     COUNT(*)                    AS total_refreshes,
+--     SUM(CREDITS_USED)           AS total_credits,
+--     AVG(CREDITS_USED)           AS avg_credits_per_refresh,
+--     MIN(START_TIME)             AS first_refresh,
+--     MAX(START_TIME)             AS last_refresh
+-- FROM TABLE(information_schema.materialized_view_refresh_history(
+--     date_range_start => DATEADD('day', -30, CURRENT_TIMESTAMP())
+-- ))
+-- GROUP BY MATERIALIZED_VIEW_NAME
+-- ORDER BY total_credits DESC;
+--
+-- QUERY 2: Compare MV storage vs base table storage
+-- SELECT
+--     TABLE_NAME,
+--     TABLE_TYPE,
+--     ROW_COUNT,
+--     BYTES / (1024*1024*1024) AS size_gb
+-- FROM information_schema.tables
+-- WHERE TABLE_SCHEMA = 'TPCH_SF100'
+-- ORDER BY BYTES DESC;
+--
+-- DECISION FRAMEWORK:
+--   If MV refresh credits > query compute savings → DROP the MV
+--   If MV refresh credits < query compute savings → KEEP the MV
+--   Rule of thumb: MV is efficient when base table DML < 10% of queries
+-- =============================================================================

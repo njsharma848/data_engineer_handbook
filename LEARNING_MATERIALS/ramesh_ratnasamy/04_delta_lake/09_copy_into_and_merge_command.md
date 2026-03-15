@@ -22,7 +22,7 @@ skips them.
 
 ```sql
 COPY INTO my_table
-FROM 'abfss://container@storageaccount.dfs.core.windows.net/landing_zone/'
+FROM 's3://my-bucket/landing_zone/'
 FILEFORMAT = CSV
 FORMAT_OPTIONS (
     'header' = 'true',

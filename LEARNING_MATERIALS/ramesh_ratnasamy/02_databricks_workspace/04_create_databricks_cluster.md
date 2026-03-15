@@ -73,7 +73,7 @@ Before selecting single-node, let's review multi-node options:
 
 **Spot Instances Option:**
 
-- ✅ Select checkbox to use unused Azure capacity
+- ✅ Select checkbox to use unused AWS capacity
 - ✅ Saves costs
 - ⚠️ Risk of eviction when instances become unavailable
 - **Recommendation**: Use only for non-critical workloads
@@ -396,7 +396,7 @@ View detailed performance metrics for cluster resources.
 ### Viewing Actual Costs:
 
 **To see pricing in your currency:**
-1. Visit the Azure pricing page
+1. Visit the AWS pricing page
 2. Look up DBU costs
 3. Calculate based on your usage and currency
 
@@ -556,7 +556,7 @@ Init scripts deserve deeper coverage as they appear on certification exams:
   - Workspace files
   - Unity Catalog Volumes
   - DBFS (legacy, being deprecated)
-  - Cloud storage (ADLS, S3, GCS)
+  - Cloud storage (S3, GCS)
 - **Execution order**: Global init scripts run first, then cluster-scoped init scripts.
 - **Debugging**: Logs for init scripts are written to `/databricks/init_scripts/<cluster-id>/` and can be inspected if a script fails.
 
@@ -589,7 +589,7 @@ Understanding DBU pricing is essential for cost optimization:
 ```
 
 - **DBU (Databricks Unit)** is the unit of processing capability per hour, billed by Databricks on top of cloud infrastructure costs.
-- **Total cluster cost** = Cloud VM cost (paid to Azure/AWS/GCP) + DBU cost (paid to Databricks).
+- **Total cluster cost** = Cloud instance cost (paid to AWS) + DBU cost (paid to Databricks).
 - The DBU rate varies by: compute type (jobs vs. interactive vs. SQL), Photon enabled/disabled, and Databricks tier (Standard, Premium, Enterprise).
 
 ---

@@ -14,8 +14,8 @@ At the core of Databricks is the open-source distributed compute engine called *
 - Founded by the creators of Apache Spark
 - Makes working with Spark easier by providing essential management layers
 - Available on all major cloud platforms:
-  - Microsoft Azure
   - AWS
+  - Microsoft Azure
   - Google Cloud
 
 ```
@@ -50,8 +50,8 @@ At the core of Databricks is the open-source distributed compute engine called *
 |           +--------------+--------------+                           |
 |           |              |              |                           |
 |     +-----+------+ +----+------+ +-----+------+                    |
-|     | Azure      | | AWS       | | Google     |                    |
-|     | (1st party)| |           | | Cloud      |                    |
+|     | AWS        | | Azure     | | Google     |                    |
+|     | (primary)  | |           | | Cloud      |                    |
 |     +------------+ +-----------+ +------------+                    |
 +=====================================================================+
 ```
@@ -271,32 +271,35 @@ An **AI assistant** that helps:
 ## Cloud Platform Integration
 
 Databricks is available on all three major cloud platforms:
-- Microsoft Azure
 - AWS
+- Microsoft Azure
 - Google Cloud
 
-### Azure: First-Party Service
+### AWS: Cloud Integration
 
-The integration between cloud platforms and Databricks is quite similar, **except Azure hosts Databricks as a first-party service**.
+On AWS, Databricks is deployed directly into the customer's AWS account. Databricks clusters run as EC2 instances within your VPC, and data resides in your own S3 buckets.
 
-**Benefits on Azure:**
-- Unified billing
-- Direct support from Microsoft for all services (both Azure services and Databricks)
+**Key AWS Integration Points:**
+- IAM roles for authentication and access control
+- S3 for data storage (the primary data plane storage)
+- VPC peering for secure network connectivity between the control plane and data plane
+- AWS KMS for encryption key management
+- Separate Databricks account billing (independent from the AWS bill)
 
 ### Common Integrations Across All Platforms
 
 #### 1. Security and Governance
 
 Leverages cloud provider services:
-- Azure Active Directory
 - AWS Identity and Access Management (IAM)
+- Azure Active Directory
 - Google Cloud IAM
 
 #### 2. Storage Services
 
 Integrates with:
+- Amazon S3
 - Azure Data Lake Storage Gen2
-- AWS S3
 - Google Cloud Storage
 
 #### 3. Compute Resources
@@ -312,8 +315,8 @@ Can use cloud provider monitoring services to:
 #### 5. DevOps Integration
 
 Integrates with DevOps services such as:
+- AWS CodePipeline
 - Azure DevOps
-- AWS DevOps tools
 - Google Cloud Build
 
 **Purpose**: Enable Continuous Integration and Continuous Deployment (CI/CD)
@@ -323,30 +326,30 @@ Integrates with DevOps services such as:
 |         DATABRICKS CLOUD INTEGRATION COMPARISON                      |
 +====================================================================+
 |                                                                     |
-|              Azure            AWS              GCP                  |
+|              AWS              Azure            GCP                  |
 |  +-----------+--------------+-----------------+---------------+     |
-|  | Deployment| 1st-party    | 3rd-party       | 3rd-party     |    |
-|  |           | service      | integration     | integration   |     |
+|  | Deployment| 3rd-party    | 1st-party       | 3rd-party     |    |
+|  |           | integration  | service         | integration   |     |
 |  +-----------+--------------+-----------------+---------------+     |
-|  | Storage   | ADLS Gen2    | S3              | GCS           |     |
+|  | Storage   | S3           | ADLS Gen2       | GCS           |     |
 |  +-----------+--------------+-----------------+---------------+     |
-|  | Identity  | Azure AD /   | AWS IAM         | Google IAM    |     |
-|  |           | Entra ID     |                 |               |     |
+|  | Identity  | AWS IAM      | Azure AD /      | Google IAM    |     |
+|  |           |              | Entra ID        |               |     |
 |  +-----------+--------------+-----------------+---------------+     |
-|  | Billing   | Unified      | Separate        | Separate      |     |
-|  |           | (Azure bill) | (Databricks     | (Databricks   |     |
-|  |           |              |  account)       |  account)     |     |
+|  | Billing   | Separate     | Unified         | Separate      |     |
+|  |           | (Databricks  | (Azure bill)    | (Databricks   |     |
+|  |           |  account)    |                 |  account)     |     |
 |  +-----------+--------------+-----------------+---------------+     |
-|  | Networking| VNet         | VPC             | VPC           |     |
-|  |           | injection    | peering         | peering       |     |
+|  | Networking| VPC          | VNet            | VPC           |     |
+|  |           | peering      | injection       | peering       |     |
 |  +-----------+--------------+-----------------+---------------+     |
-|  | Key Vault | Azure Key    | AWS KMS         | Cloud KMS     |     |
-|  |           | Vault        |                 |               |     |
+|  | Key Vault | AWS KMS      | Azure Key       | Cloud KMS     |     |
+|  |           |              | Vault           |               |     |
 |  +-----------+--------------+-----------------+---------------+     |
-|  | Monitoring| Azure Monitor| CloudWatch      | Cloud         |     |
+|  | Monitoring| CloudWatch   | Azure Monitor   | Cloud         |     |
 |  |           |              |                 | Monitoring    |     |
 |  +-----------+--------------+-----------------+---------------+     |
-|  | DevOps    | Azure DevOps | CodePipeline    | Cloud Build   |     |
+|  | DevOps    | CodePipeline | Azure DevOps    | Cloud Build   |     |
 |  +-----------+--------------+-----------------+---------------+     |
 +=====================================================================+
 ```
@@ -408,7 +411,7 @@ Understanding the separation between the Control Plane and Data Plane is a key c
 |  |  | (Driver) |  | (Workers)|  |                                  |
 |  |  +----------+  +----------+  |                                  |
 |  |  +---------------------------+|                                  |
-|  |  |  Cloud Object Storage     ||  <-- Your S3/ADLS/GCS          |
+|  |  |  Cloud Object Storage     ||  <-- Your S3 bucket             |
 |  |  |  (Data stays here)        ||                                  |
 |  |  +---------------------------+|                                  |
 |  +-------------------------------+                                  |
@@ -543,7 +546,7 @@ Understanding how Databricks compares to competitors is valuable for interviews.
 | **Core engine** | Apache Spark | Proprietary (SnowPark for Spark-like) | Serverless (Presto/Trino for queries) | Multiple engines |
 | **Open source** | Heavy (Spark, Delta, MLflow) | Minimal | Moderate | Minimal |
 | **Storage format** | Delta Lake (open) | Proprietary | Parquet/Iceberg | Delta Lake |
-| **Multi-cloud** | Yes (Azure, AWS, GCP) | Yes (Azure, AWS, GCP) | AWS only | Azure primarily |
+| **Multi-cloud** | Yes (AWS, Azure, GCP) | Yes (AWS, Azure, GCP) | AWS only | Azure primarily |
 | **ML support** | Excellent (MLflow, notebooks) | Growing (SnowPark ML) | SageMaker integration | Built-in |
 | **Streaming** | Native (Structured Streaming) | Limited (Snowpipe) | Kinesis/Glue Streaming | Event streams |
 | **Governance** | Unity Catalog | Built-in | Lake Formation | Purview |
@@ -555,7 +558,7 @@ Understanding how Databricks compares to competitors is valuable for interviews.
 ## KEY INTERVIEW QUESTIONS AND ANSWERS
 
 ### Q1: What is Databricks, and how does it relate to Apache Spark?
-**A:** Databricks is a unified data analytics platform built on top of Apache Spark, founded by the creators of Spark. While Spark is the open-source distributed compute engine at the core, Databricks adds essential management layers including simplified cluster management, an integrated notebook IDE, optimized runtimes (up to 5x faster than vanilla Spark), the Photon query engine, Delta Lake for ACID transactions, Unity Catalog for governance, and workflow orchestration. It is available as a managed service on Azure, AWS, and GCP.
+**A:** Databricks is a unified data analytics platform built on top of Apache Spark, founded by the creators of Spark. While Spark is the open-source distributed compute engine at the core, Databricks adds essential management layers including simplified cluster management, an integrated notebook IDE, optimized runtimes (up to 5x faster than vanilla Spark), the Photon query engine, Delta Lake for ACID transactions, Unity Catalog for governance, and workflow orchestration. It is available as a managed service on AWS, Azure, and GCP.
 
 ### Q2: What is the difference between the Control Plane and the Data Plane in Databricks?
 **A:** The Control Plane is managed by Databricks and includes the web UI, REST APIs, notebook service, cluster manager, job scheduler, and Unity Catalog metadata. The Data Plane runs in the customer's own cloud subscription and includes the actual compute clusters (VMs) and cloud object storage where data resides. This separation ensures that customer data never leaves their cloud account -- only metadata and commands travel to the control plane -- which is critical for security and compliance.

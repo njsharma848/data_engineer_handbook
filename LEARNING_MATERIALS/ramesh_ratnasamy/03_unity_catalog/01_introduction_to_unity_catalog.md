@@ -53,13 +53,13 @@ Any data engineering project requires the ability to:
 
 | Cloud Provider | Storage Service |
 |---------------|----------------|
+| **AWS** | Amazon S3 |
 | **Azure** | Azure Data Lake Storage (ADLS) Gen2 |
-| **AWS** | S3 |
 | **Google Cloud** | Google Cloud Storage (GCS) |
 
 **For This Course:**
-- We're working in Azure
-- Storage: **ADLS Gen2**
+- We're working in AWS
+- Storage: **Amazon S3**
 - Compute Engine: **Apache Spark**
 
 ---
@@ -184,13 +184,13 @@ A **distributed file system** that's fully integrated within Databricks.
 
 **Abstraction Layer:**
 - Provides abstraction over cloud storage
-- Works with Azure Data Lake Storage, AWS S3, GCS
+- Works with Amazon S3, Azure Data Lake Storage, GCS
 - Simplifies access to cloud storage
 
-### How DBFS Works in Azure
+### How DBFS Works in AWS
 
 **Mounting Example:**
-1. Mount a container from Azure Data Lake Storage into DBFS
+1. Mount a path from Amazon S3 into DBFS
 2. Access it like a shared drive on your computer
 3. Simple file access without complex authentication
 
@@ -487,7 +487,7 @@ Configure our Databricks workspace to use Unity Catalog now, so it will be easie
          |                  |
          v                  v
 +-------------------------------------+
-|   Azure Data Lake Storage Gen2      |
+|           Amazon S3                 |
 +-------------------------------------+
 ```
 
@@ -516,7 +516,7 @@ Configure our Databricks workspace to use Unity Catalog now, so it will be easie
                     |
                     v
 +-------------------------------------------+
-|   Azure Data Lake Storage Gen2            |
+|               Amazon S3                   |
 +-------------------------------------------+
 ```
 

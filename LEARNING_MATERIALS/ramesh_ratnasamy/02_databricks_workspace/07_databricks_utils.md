@@ -43,7 +43,7 @@ Databricks has been developing numerous utilities, with some in preview and othe
 
 **Purpose:**
 - Get secret values from secrets stored in secret scopes
-- Backed by Databricks or Azure Key Vault
+- Backed by Databricks or AWS Secrets Manager
 
 **Use Case:**
 - Securely access credentials and API keys
@@ -57,7 +57,7 @@ Databricks has been developing numerous utilities, with some in preview and othe
 
 **Use Cases:**
 - Calling notebook passes parameters
-- External applications (e.g., Azure Data Factory pipeline) pass values at runtime
+- External applications (e.g., AWS Glue pipeline) pass values at runtime
 
 **Benefits:**
 - Makes notebooks reusable
@@ -575,13 +575,13 @@ Secret management is critical for production data engineering and frequently tes
 
 Databricks supports two types of secret scopes:
 
-| Feature | Databricks-backed Scope | Azure Key Vault-backed Scope |
+| Feature | Databricks-backed Scope | AWS Secrets Manager-backed Scope |
 |---------|------------------------|------------------------------|
-| **Storage** | Encrypted in Databricks | Stored in Azure Key Vault |
-| **Management** | Via Databricks CLI/API | Via Azure Key Vault portal |
-| **Access control** | Databricks ACLs | Azure RBAC + Databricks ACLs |
-| **Best for** | Simple use cases, non-Azure | Enterprise Azure deployments |
-| **Creation** | `databricks secrets create-scope` | Link to existing Key Vault |
+| **Storage** | Encrypted in Databricks | Stored in AWS Secrets Manager |
+| **Management** | Via Databricks CLI/API | Via AWS Console |
+| **Access control** | Databricks ACLs | AWS IAM + Databricks ACLs |
+| **Best for** | Simple use cases | Enterprise AWS deployments |
+| **Creation** | `databricks secrets create-scope` | Link to existing Secrets Manager |
 
 ### Common dbutils.secrets Methods
 
@@ -716,7 +716,7 @@ displayHTML("<h1>Custom HTML Output</h1>")
 **A:** Both provide access to DBFS, but they serve different purposes. `%fs` is a magic command for quick, ad hoc file system operations -- it produces formatted output directly in the cell. `dbutils.fs` is a programmatic API that returns Python/Scala/R data structures (lists of FileInfo objects) that can be processed with code -- filtering, counting, looping, etc. Use `%fs` for quick exploration and `dbutils.fs` when you need to programmatically work with file system results. Behind the scenes, `%fs` is a shortcut for `dbutils.fs`.
 
 ### Q2: How do Databricks Secrets work and why are they important?
-**A:** Databricks Secrets provide secure credential management through `dbutils.secrets`. Secrets are stored in **secret scopes** (either Databricks-backed with encrypted storage, or Azure Key Vault-backed for enterprise deployments). You retrieve secrets using `dbutils.secrets.get(scope, key)`. A critical security feature is that secret values are **automatically redacted** in notebook output -- even `print(secret_value)` shows `[REDACTED]`. This prevents accidental exposure of credentials in shared notebooks or logs. Secrets should always be used instead of hardcoding passwords, API keys, or connection strings.
+**A:** Databricks Secrets provide secure credential management through `dbutils.secrets`. Secrets are stored in **secret scopes** (either Databricks-backed with encrypted storage, or AWS Secrets Manager-backed for enterprise deployments). You retrieve secrets using `dbutils.secrets.get(scope, key)`. A critical security feature is that secret values are **automatically redacted** in notebook output -- even `print(secret_value)` shows `[REDACTED]`. This prevents accidental exposure of credentials in shared notebooks or logs. Secrets should always be used instead of hardcoding passwords, API keys, or connection strings.
 
 ### Q3: What are the four types of widgets in dbutils.widgets?
 **A:** The four widget types are: (1) **text** -- free-form text input for arbitrary values; (2) **dropdown** -- single selection from a predefined list; (3) **combobox** -- combination of text input and dropdown, allowing either selection or custom input; (4) **multiselect** -- allows selecting multiple values from a list. All widget types take a name, default value, and label. Values are retrieved with `dbutils.widgets.get("name")`. Widgets appear as input controls at the top of the notebook and can be populated by external callers via `dbutils.notebook.run()` or Databricks Jobs.
@@ -731,7 +731,7 @@ displayHTML("<h1>Custom HTML Output</h1>")
 **A:** Use the built-in help system with a three-level pattern: (1) `dbutils.help()` lists all available utility categories; (2) `dbutils.fs.help()` lists all methods within the file system utility; (3) `dbutils.fs.help("cp")` shows detailed help for a specific method including its signature, description, and example usage. This pattern works for all utility categories: `dbutils.secrets.help()`, `dbutils.widgets.help()`, etc. The help system eliminates the need to memorize all available methods and their parameters.
 
 ### Q7: What are mount operations in dbutils.fs and are they still recommended?
-**A:** Mount operations (`dbutils.fs.mount`, `dbutils.fs.unmount`, `dbutils.fs.mounts`) allow you to map external cloud storage (ADLS Gen2, S3, GCS) to a DBFS path (e.g., `/mnt/data`). Once mounted, you can access external storage using DBFS paths instead of full cloud storage URLs. However, mounts are **legacy and no longer recommended** for Unity Catalog-enabled workspaces. The modern approach is to use **external locations** and **storage credentials** managed through Unity Catalog, which provides better security, auditing, and governance. Mounts bypass Unity Catalog's access controls.
+**A:** Mount operations (`dbutils.fs.mount`, `dbutils.fs.unmount`, `dbutils.fs.mounts`) allow you to map external cloud storage (S3, GCS) to a DBFS path (e.g., `/mnt/data`). Once mounted, you can access external storage using DBFS paths instead of full cloud storage URLs. However, mounts are **legacy and no longer recommended** for Unity Catalog-enabled workspaces. The modern approach is to use **external locations** and **storage credentials** managed through Unity Catalog, which provides better security, auditing, and governance. Mounts bypass Unity Catalog's access controls.
 
 ### Q8: In which notebook cell languages can you use dbutils?
 **A:** dbutils is available in **Python**, **Scala**, and **R** cells. It is **not available in SQL cells**. If you need to use dbutils functionality from a SQL context, you can create a Python cell to perform the dbutils operation and store results in a temporary view or variable, then access that from SQL. The syntax is identical across Python and Scala (`dbutils.fs.ls("/")`) but R uses a slightly different calling convention. Most data engineers use dbutils from Python cells since Python is the most common language in Databricks data engineering.

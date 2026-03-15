@@ -11,7 +11,7 @@ that data engineers face every single day, and Delta Lake was built specifically
 
 So what is Delta Lake? At its core, Delta Lake is an open-source storage layer that sits on top of
 your existing data lake and brings reliability to it. Think of it as an upgrade layer. You still
-keep your data in cloud storage (S3, ADLS, GCS), you still use Parquet files under the hood, but
+keep your data in cloud storage (S3, GCS), you still use Parquet files under the hood, but
 now you get ACID transactions, schema enforcement, time travel, and a whole bunch of other features
 that make your data lake behave more like a data warehouse. That's the key insight -- Delta Lake
 bridges the gap between the flexibility of a data lake and the reliability of a data warehouse.
@@ -58,9 +58,9 @@ reliability on top of your existing cloud storage.
 +------------------------------------------------------------------+
 |                    CLOUD STORAGE                                 |
 |                                                                  |
-|   +------------+    +------------+    +------------+             |
-|   |  AWS S3    |    | Azure ADLS |    | Google GCS |             |
-|   +------------+    +------------+    +------------+             |
+|   +------------+    +------------+                               |
+|   |  AWS S3    |    | Google GCS |                               |
+|   +------------+    +------------+                               |
 |                                                                  |
 |   Data stored as Parquet files + _delta_log/ metadata            |
 |                                                                  |
@@ -413,7 +413,7 @@ interoperability.
 A: Delta Lake is an open-source storage layer that brings ACID transaction support to data lakes.
 It solves the reliability problems inherent in traditional data lakes, such as partial writes from
 failed jobs, lack of schema enforcement, no support for concurrent writes, and inability to do
-UPDATE/DELETE operations. It sits on top of existing cloud storage (S3, ADLS, GCS) and uses Parquet
+UPDATE/DELETE operations. It sits on top of existing cloud storage (S3, GCS) and uses Parquet
 as its underlying data format, adding a transaction log that enables these reliability features.
 
 **Q: What is the relationship between Delta Lake and Parquet?**

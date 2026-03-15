@@ -279,7 +279,7 @@ Efficiently moving data between Medallion layers requires incremental processing
 +====================================================================+
 |                                                                     |
 |  Cloud Storage                                                      |
-|  (S3 / ADLS / GCS)                                                 |
+|  (S3 / ADLS / GCS)    [Primary: Amazon S3]                          |
 |       |                                                             |
 |       | (Auto Loader detects new files automatically)               |
 |       v                                                             |
@@ -313,7 +313,7 @@ Efficiently moving data between Medallion layers requires incremental processing
 
 Auto Loader (`cloudFiles` format) is the recommended way to ingest data into the Bronze layer:
 
-- **File notification mode**: Uses cloud events (e.g., AWS SNS/SQS, Azure Event Grid) to detect new files -- scalable for millions of files
+- **File notification mode**: Uses cloud events (e.g., AWS SNS/SQS) to detect new files -- scalable for millions of files
 - **Directory listing mode**: Periodically lists the directory -- simpler setup, suitable for fewer files
 - **Schema inference and evolution**: Automatically detects schema from incoming files and can evolve schema as new columns appear
 - **Exactly-once guarantee**: Tracks processed files via checkpointing to avoid duplicates

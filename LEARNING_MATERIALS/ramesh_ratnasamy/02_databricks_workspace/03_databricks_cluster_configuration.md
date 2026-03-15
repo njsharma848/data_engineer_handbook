@@ -194,7 +194,7 @@ When spot instances become unavailable, Databricks will:
 
 ## 7. Cluster VM Types
 
-Azure offers a range of VM types, which Databricks groups into specific categories.
+AWS offers a range of instance types, which Databricks groups into specific categories.
 
 ### Memory Optimized
 
@@ -428,7 +428,7 @@ Cluster policies are an important governance feature:
 **A:** Disable auto-scaling for streaming workloads where the time to scale up nodes is unacceptable and consistent throughput is required, workloads with predictable and constant resource needs, or performance-sensitive jobs where adding/removing nodes could cause data shuffle overhead. When auto-scaling is disabled, set a fixed number of worker nodes that matches the expected workload requirements.
 
 ### Q6: What is the risk of using spot instances and how does Databricks handle it?
-**A:** Spot instances (called Spot VMs on Azure, Spot Instances on AWS) use spare cloud capacity at significant discounts (up to 60-90% savings). The risk is that the cloud provider can reclaim (evict) these VMs with little notice when capacity is needed by on-demand customers. Databricks mitigates this by: (1) only allowing spot instances for worker nodes, keeping the driver on-demand to prevent job loss; (2) attempting to acquire replacement spot instances when eviction occurs; (3) falling back to on-demand instances if spot instances are unavailable. Use spot instances for fault-tolerant, non-time-critical workloads.
+**A:** Spot instances use spare AWS capacity at significant discounts (up to 60-90% savings). The risk is that the cloud provider can reclaim (evict) these VMs with little notice when capacity is needed by on-demand customers. Databricks mitigates this by: (1) only allowing spot instances for worker nodes, keeping the driver on-demand to prevent job loss; (2) attempting to acquire replacement spot instances when eviction occurs; (3) falling back to on-demand instances if spot instances are unavailable. Use spot instances for fault-tolerant, non-time-critical workloads.
 
 ### Q7: What is the difference between Memory Optimized and Compute Optimized VM types?
 **A:** Memory Optimized VMs have a high memory-to-CPU ratio and are best for workloads that cache large datasets in memory, such as machine learning training, large Delta table joins, or workloads with heavy broadcast variables. Compute Optimized VMs have a high CPU-to-memory ratio and are best for CPU-intensive workloads like structured streaming with high throughput requirements, distributed analytics with complex transformations, and data science workloads with heavy computation. Choose based on whether your workload is memory-bound or CPU-bound.

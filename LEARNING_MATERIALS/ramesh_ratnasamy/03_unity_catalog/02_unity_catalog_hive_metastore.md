@@ -60,15 +60,15 @@ The **top-level container** for all metadata in Unity Catalog.
 | Characteristic | Details |
 |---------------|---------|
 | **Level** | Databricks account level |
-| **Per Region** | One Metastore per Azure region |
+| **Per Region** | One Metastore per AWS region |
 | **Workspace Attachment** | One or more workspaces can attach to same Metastore |
-| **Default Storage** | Can be paired with ADLS Gen2 container at creation |
+| **Default Storage** | Can be paired with an S3 bucket at creation |
 | **Relationship** | All other objects hang off the Metastore |
 
 #### Storage Configuration:
 
 **At creation time:**
-- Can be paired with a container in ADLS Gen2
+- Can be paired with an S3 bucket
 - Provides default storage location
 - Used for managed tables and volumes
 
@@ -154,7 +154,7 @@ Each schema may contain one or more:
 
 #### What are Volumes?
 
-**Logical volumes** that provide a high-level abstraction to containers in Azure Data Lake Storage.
+**Logical volumes** that provide a high-level abstraction to paths in Amazon S3.
 
 #### Types of Volumes:
 
@@ -198,7 +198,7 @@ Represent existing data in cloud storage managed **outside of Databricks** but r
 
 **Example Scenario:**
 ```
-External Application → Writes to ADLS Gen2
+External Application → Writes to S3
                      ↓
           External Volume in Unity Catalog
                      ↓

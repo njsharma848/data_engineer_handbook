@@ -208,7 +208,7 @@ Structured Streaming primarily uses **micro-batch** processing:
 Micro-Batch Execution:
 
 Time:    |-------|-------|-------|-------|
-Trigger: |  T1   |  T2   |  T3   |  T4  |
+Trigger: |  T1   |  T2   |  T3   |  T4   |
 
 T1: Collect all data since last trigger
     → Plan query → Execute → Write output → Commit

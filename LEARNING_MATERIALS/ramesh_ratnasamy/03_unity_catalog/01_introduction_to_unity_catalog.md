@@ -87,17 +87,17 @@ Databricks has evolved its data access approach over time:
   LEGACY (Workspace-Level)                 UNITY CATALOG (Account-Level)
 +---------------------------+          +----------------------------------+
 | Workspace A               |          |        Databricks Account        |
-|  +-------+  +-------+    |          |  +----------------------------+  |
-|  | Hive  |  | DBFS  |    |          |  |      Unity Catalog         |  |
-|  | Meta  |  |       |    |          |  |      Metastore             |  |
-|  +-------+  +-------+    |          |  +----------------------------+  |
+|  +-------+  +-------+     |          |  +----------------------------+  |
+|  | Hive  |  | DBFS  |     |          |  |      Unity Catalog         |  |
+|  | Meta  |  |       |     |          |  |      Metastore             |  |
+|  +-------+  +-------+     |          |  +----------------------------+  |
 +---------------------------+          |       /          |          \    |
-                                       |      /           |           \   |
-| Workspace B               |          | +------+    +------+    +------+|
-|  +-------+  +-------+    |          | | WS A |    | WS B |    | WS C ||
-|  | Hive  |  | DBFS  |    |          | +------+    +------+    +------+|
-|  | Meta  |  |       |    |          +----------------------------------+
-|  +-------+  +-------+    |
+                            |          |      /           |           \   |
+| Workspace B               |          | +------+    +------+    +------+ |
+|  +-------+  +-------+     |          | | WS A |    | WS B |    | WS C | |
+|  | Hive  |  | DBFS  |     |          | +------+    +------+    +------+ |
+|  | Meta  |  |       |     |          +----------------------------------+
+|  +-------+  +-------+     |
 +---------------------------+          All workspaces share one metastore
                                        per region = CENTRALIZED governance
 Each workspace has its OWN
@@ -481,7 +481,7 @@ Configure our Databricks workspace to use Unity Catalog now, so it will be easie
 |  |   DBFS    |    |     Hive      | |
 |  |  (Files)  |    |   Metastore   | |
 |  |           |    |   (Tables)    | |
-|  +-----+-----+    +-------+------+ |
+|  +-----+-----+    +-------+------+  |
 |        |                  |         |
 +--------+------------------+---------+
          |                  |
@@ -497,21 +497,21 @@ Configure our Databricks workspace to use Unity Catalog now, so it will be easie
 +-------------------------------------------+
 |        Databricks Account                 |
 |                                           |
-|  +-------------------------------------+ |
-|  |        Unity Catalog Metastore      | |
-|  |                                     | |
-|  |  +----------+  +-----------+        | |
-|  |  | Volumes  |  |  Tables   |        | |
-|  |  | (Files)  |  |  Views    |        | |
-|  |  |          |  | Functions |        | |
-|  |  +----+-----+  +-----+----+        | |
-|  |       +---------------+             | |
-|  |       Unified Access                | |
-|  +----------------+--------------------+ |
+|  +-------------------------------------+  |
+|  |        Unity Catalog Metastore      |  |
+|  |                                     |  |
+|  |  +----------+  +-----------+        |  |
+|  |  | Volumes  |  |  Tables   |        |  |
+|  |  | (Files)  |  |  Views    |        |  |
+|  |  |          |  | Functions |        |  |
+|  |  +----+-----+  +-----+----+         |  |
+|  |       +---------------+             |  |
+|  |       Unified Access                |  |
+|  +----------------+--------------------+  |
 |                   |                       |
-|   +--------+  +--------+  +--------+    |
-|   |  WS 1  |  |  WS 2  |  |  WS 3  |    |
-|   +--------+  +--------+  +--------+    |
+|   +--------+  +--------+  +--------+      |
+|   |  WS 1  |  |  WS 2  |  |  WS 3  |      |
+|   +--------+  +--------+  +--------+      |
 +-------------------------------------------+
                     |
                     v
@@ -611,14 +611,14 @@ Data Mesh is an organizational approach to data architecture that treats data as
 +-----------------------------------------------------------+
 |               Unity Catalog Metastore                     |
 |                                                           |
-|  +-------------+  +-------------+  +-------------+       |
-|  |  CATALOG:   |  |  CATALOG:   |  |  CATALOG:   |       |
-|  |  sales      |  |  marketing  |  |  finance    |       |
-|  |  (Domain 1) |  |  (Domain 2) |  |  (Domain 3) |       |
-|  |             |  |             |  |             |       |
-|  | Owned by    |  | Owned by    |  | Owned by    |       |
-|  | Sales Team  |  | Mktg Team   |  | Finance Team|       |
-|  +-------------+  +-------------+  +-------------+       |
+|  +-------------+  +-------------+  +-------------+        |
+|  |  CATALOG:   |  |  CATALOG:   |  |  CATALOG:   |        |
+|  |  sales      |  |  marketing  |  |  finance    |        |
+|  |  (Domain 1) |  |  (Domain 2) |  |  (Domain 3) |        |
+|  |             |  |             |  |             |        |
+|  | Owned by    |  | Owned by    |  | Owned by    |        |
+|  | Sales Team  |  | Mktg Team   |  | Finance Team|        |
+|  +-------------+  +-------------+  +-------------+        |
 |                                                           |
 |  Cross-domain discovery + governed sharing via            |
 |  Delta Sharing, grants, and unified lineage               |

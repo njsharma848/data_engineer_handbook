@@ -18,20 +18,20 @@ the heartbeat of your streaming pipeline.
 Trigger Types:
 
 ┌──────────────────────┬────────────────────────────────────────────────────┐
-│ Trigger              │ Behavior                                         │
+│ Trigger              │ Behavior                                           │
 ├──────────────────────┼────────────────────────────────────────────────────┤
-│ Default (unspecified) │ Starts next micro-batch as soon as previous one  │
-│                      │ finishes. Continuous processing.                  │
+│ Default (unspecified) │ Starts next micro-batch as soon as previous one   │
+│                      │ finishes. Continuous processing.                   │
 ├──────────────────────┼────────────────────────────────────────────────────┤
-│ Fixed interval       │ Waits for the specified duration before starting  │
-│ (processingTime)     │ the next micro-batch. If previous batch takes     │
-│                      │ longer, next starts immediately after.            │
+│ Fixed interval       │ Waits for the specified duration before starting   │
+│ (processingTime)     │ the next micro-batch. If previous batch takes      │
+│                      │ longer, next starts immediately after.             │
 ├──────────────────────┼────────────────────────────────────────────────────┤
-│ availableNow         │ Processes ALL available data in multiple batches, │
-│                      │ then stops. Batch-like semantics.                 │
+│ availableNow         │ Processes ALL available data in multiple batches,  │
+│                      │ then stops. Batch-like semantics.                  │
 ├──────────────────────┼────────────────────────────────────────────────────┤
-│ once (deprecated)    │ Processes ONE micro-batch of available data,      │
-│                      │ then stops. Replaced by availableNow.             │
+│ once (deprecated)    │ Processes ONE micro-batch of available data,       │
+│                      │ then stops. Replaced by availableNow.              │
 └──────────────────────┴────────────────────────────────────────────────────┘
 ```
 
@@ -189,20 +189,20 @@ especially important when your query involves aggregations.
 
 ```
 ┌──────────┬──────────────────────────────────────────────────────────────┐
-│ Mode     │ What Gets Written                                          │
+│ Mode     │ What Gets Written                                            │
 ├──────────┼──────────────────────────────────────────────────────────────┤
-│ append   │ Only NEW rows that were added since the last trigger.      │
-│          │ Rows once written are never changed.                       │
-│          │ DEFAULT mode. Cannot be used with aggregations that might  │
-│          │ update previous results (unless using watermarks).         │
+│ append   │ Only NEW rows that were added since the last trigger.        │
+│          │ Rows once written are never changed.                         │
+│          │ DEFAULT mode. Cannot be used with aggregations that might    │
+│          │ update previous results (unless using watermarks).           │
 ├──────────┼──────────────────────────────────────────────────────────────┤
-│ complete │ The ENTIRE result table is written every trigger.          │
-│          │ Only works with aggregation queries.                       │
-│          │ Previous output is overwritten entirely.                   │
+│ complete │ The ENTIRE result table is written every trigger.            │
+│          │ Only works with aggregation queries.                         │
+│          │ Previous output is overwritten entirely.                     │
 ├──────────┼──────────────────────────────────────────────────────────────┤
-│ update   │ Only CHANGED rows since the last trigger.                  │
-│          │ Like append, but also includes updated aggregation results.│
-│          │ More efficient than complete for large result tables.      │
+│ update   │ Only CHANGED rows since the last trigger.                    │
+│          │ Like append, but also includes updated aggregation results.  │
+│          │ More efficient than complete for large result tables.        │
 └──────────┴──────────────────────────────────────────────────────────────┘
 ```
 
@@ -304,10 +304,10 @@ Output Mode vs Query Type Compatibility:
 ┌────────────────────────────┬────────┬──────────┬────────┐
 │ Query Type                 │ Append │ Complete │ Update │
 ├────────────────────────────┼────────┼──────────┼────────┤
-│ No aggregation (map-only)  │   ✓    │    ✗     │   ✓    │
-│ Aggregation (no watermark) │   ✗    │    ✓     │   ✓    │
-│ Aggregation (w/ watermark) │   ✓*   │    ✓     │   ✓    │
-│ flatMapGroupsWithState     │   ✓    │    ✗     │   ✓    │
+│ No aggregation (map-only)  │   ✓    │    ✗    │   ✓    │
+│ Aggregation (no watermark) │   ✗    │    ✓    │   ✓    │
+│ Aggregation (w/ watermark) │   ✓*   │    ✓    │   ✓    │
+│ flatMapGroupsWithState     │   ✓    │    ✗    │   ✓    │
 └────────────────────────────┴────────┴──────────┴────────┘
 
 * Append with watermarked aggregation: rows are only appended AFTER

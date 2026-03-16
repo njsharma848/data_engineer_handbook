@@ -21,52 +21,52 @@
 -- =============================================================================
 --
 -- ┌─────────────────────────────────────────────────────────────────────────┐
--- │                    CLOUD SERVICES LAYER                                │
--- │  (Brain of Snowflake — always running, shared across all users)       │
--- │                                                                        │
--- │  ┌──────────┐ ┌──────────────┐ ┌──────────┐ ┌────────────────────┐   │
--- │  │  Query    │ │ Metadata     │ │ Access   │ │ Infrastructure     │   │
--- │  │  Parsing  │ │ Management   │ │ Control  │ │ Management         │   │
--- │  │  & Opt.   │ │              │ │ (RBAC)   │ │                    │   │
--- │  └──────────┘ └──────────────┘ └──────────┘ └────────────────────┘   │
--- │  ┌──────────┐ ┌──────────────┐ ┌──────────┐ ┌────────────────────┐   │
--- │  │ Trans-   │ │ Result       │ │ Security │ │ Transaction        │   │
--- │  │ action   │ │ Caching      │ │ & Encrypt│ │ Management         │   │
--- │  │ Control  │ │ (24 hrs)     │ │          │ │                    │   │
--- │  └──────────┘ └──────────────┘ └──────────┘ └────────────────────┘   │
+-- │                    CLOUD SERVICES LAYER                                 │
+-- │  (Brain of Snowflake — always running, shared across all users)         │
+-- │                                                                         │
+-- │  ┌──────────┐ ┌──────────────┐ ┌──────────┐ ┌────────────────────┐      │
+-- │  │  Query    │ │ Metadata     │ │ Access   │ │ Infrastructure    │      │
+-- │  │  Parsing  │ │ Management   │ │ Control  │ │ Management        │      │
+-- │  │  & Opt.   │ │              │ │ (RBAC)   │ │                   │      │
+-- │  └──────────┘ └──────────────┘ └──────────┘ └────────────────────┘      │
+-- │  ┌──────────┐ ┌──────────────┐ ┌──────────┐ ┌────────────────────┐      │
+-- │  │ Trans-   │ │ Result       │ │ Security │ │ Transaction        │      │
+-- │  │ action   │ │ Caching      │ │ & Encrypt│ │ Management         │      │
+-- │  │ Control  │ │ (24 hrs)     │ │          │ │                    │      │
+-- │  └──────────┘ └──────────────┘ └──────────┘ └────────────────────┘      │
 -- ├─────────────────────────────────────────────────────────────────────────┤
--- │                    COMPUTE LAYER (Virtual Warehouses)                  │
--- │  (Muscle of Snowflake — scales independently, isolated per warehouse) │
--- │                                                                        │
--- │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                │
--- │  │  Warehouse   │  │  Warehouse   │  │  Warehouse   │                │
--- │  │  (ETL)       │  │  (Analytics) │  │  (Data Sci)  │                │
--- │  │  X-Large     │  │  Medium      │  │  Small       │                │
--- │  │              │  │              │  │              │                │
--- │  │  ┌────────┐  │  │  ┌────────┐  │  │  ┌────────┐  │                │
--- │  │  │Local   │  │  │  │Local   │  │  │  │Local   │  │                │
--- │  │  │SSD     │  │  │  │SSD     │  │  │  │SSD     │  │                │
--- │  │  │Cache   │  │  │  │Cache   │  │  │  │Cache   │  │                │
--- │  │  └────────┘  │  │  └────────┘  │  │  └────────┘  │                │
--- │  └──────────────┘  └──────────────┘  └──────────────┘                │
--- │  (Each warehouse is independent — no resource contention!)            │
+-- │                    COMPUTE LAYER (Virtual Warehouses)                   │
+-- │  (Muscle of Snowflake — scales independently, isolated per warehouse)   │
+-- │                                                                         │
+-- │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                   │
+-- │  │  Warehouse   │  │  Warehouse   │  │  Warehouse   │                   │
+-- │  │  (ETL)       │  │  (Analytics) │  │  (Data Sci)  │                   │
+-- │  │  X-Large     │  │  Medium      │  │  Small       │                   │
+-- │  │              │  │              │  │              │                   │
+-- │  │  ┌────────┐  │  │  ┌────────┐  │  │  ┌────────┐  │                   │
+-- │  │  │Local   │  │  │  │Local   │  │  │  │Local   │  │                   │
+-- │  │  │SSD     │  │  │  │SSD     │  │  │  │SSD     │  │                   │
+-- │  │  │Cache   │  │  │  │Cache   │  │  │  │Cache   │  │                   │
+-- │  │  └────────┘  │  │  └────────┘  │  │  └────────┘  │                   │
+-- │  └──────────────┘  └──────────────┘  └──────────────┘                   │
+-- │  (Each warehouse is independent — no resource contention!)              │
 -- ├─────────────────────────────────────────────────────────────────────────┤
--- │                    STORAGE LAYER                                       │
--- │  (Foundation of Snowflake — managed cloud object storage)             │
--- │                                                                        │
--- │  ┌──────────────────────────────────────────────────────────────────┐  │
--- │  │                     Cloud Object Storage                         │  │
--- │  │              (AWS S3 / Azure Blob / GCS)                        │  │
--- │  │                                                                  │  │
--- │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │  │
--- │  │  │ Micro-  │ │ Micro-  │ │ Micro-  │ │ Micro-  │ │ Micro-  │  │  │
--- │  │  │Partition│ │Partition│ │Partition│ │Partition│ │Partition│  │  │
--- │  │  │  1      │ │  2      │ │  3      │ │  4      │ │  ...    │  │  │
--- │  │  │ (50-500 │ │ (50-500 │ │ (50-500 │ │ (50-500 │ │         │  │  │
--- │  │  │  MB)    │ │  MB)    │ │  MB)    │ │  MB)    │ │         │  │  │
--- │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘  │  │
--- │  │  Compressed, columnar, encrypted, immutable                      │  │
--- │  └──────────────────────────────────────────────────────────────────┘  │
+-- │                    STORAGE LAYER                                        │
+-- │  (Foundation of Snowflake — managed cloud object storage)               │
+-- │                                                                         │
+-- │  ┌──────────────────────────────────────────────────────────────────┐   │
+-- │  │                     Cloud Object Storage                         │   │
+-- │  │              (AWS S3 / Azure Blob / GCS)                         │   │
+-- │  │                                                                  │   │
+-- │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐     │   │
+-- │  │  │ Micro-  │ │ Micro-  │ │ Micro-  │ │ Micro-  │ │ Micro-  │     │   │
+-- │  │  │Partition│ │Partition│ │Partition│ │Partition│ │Partition│     │   │
+-- │  │  │  1      │ │  2      │ │  3      │ │  4      │ │  ...    │     │   │
+-- │  │  │ (50-500 │ │ (50-500 │ │ (50-500 │ │ (50-500 │ │         │     │   │
+-- │  │  │  MB)    │ │  MB)    │ │  MB)    │ │  MB)    │ │         │     │   │
+-- │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘     │   │
+-- │  │  Compressed, columnar, encrypted, immutable                      │   │
+-- │  └──────────────────────────────────────────────────────────────────┘   │
 -- └─────────────────────────────────────────────────────────────────────────┘
 --
 --
@@ -78,23 +78,23 @@
 -- ┌──────────────────────┬──────────────────────────────────────────────────┐
 -- │ Feature              │ Description                                      │
 -- ├──────────────────────┼──────────────────────────────────────────────────┤
--- │ Storage backend      │ Cloud object storage (S3, Azure Blob, GCS)     │
--- │ Data format          │ Proprietary columnar format (NOT Parquet/ORC)   │
--- │ Unit of storage      │ Micro-partitions (50-500 MB compressed)        │
--- │ Compression          │ Automatic, columnar compression                │
--- │ Encryption           │ AES-256, always encrypted at rest              │
--- │ Mutability           │ Immutable (writes create new micro-partitions) │
--- │ Organization         │ Columnar (not row-based)                       │
--- │ Management           │ Fully managed by Snowflake (no tuning needed)  │
--- │ Billing              │ Pay per TB/month of compressed data stored     │
+-- │ Storage backend      │ Cloud object storage (S3, Azure Blob, GCS)       │
+-- │ Data format          │ Proprietary columnar format (NOT Parquet/ORC)    │
+-- │ Unit of storage      │ Micro-partitions (50-500 MB compressed)          │
+-- │ Compression          │ Automatic, columnar compression                  │
+-- │ Encryption           │ AES-256, always encrypted at rest                │
+-- │ Mutability           │ Immutable (writes create new micro-partitions)   │
+-- │ Organization         │ Columnar (not row-based)                         │
+-- │ Management           │ Fully managed by Snowflake (no tuning needed)    │
+-- │ Billing              │ Pay per TB/month of compressed data stored       │
 -- └──────────────────────┴──────────────────────────────────────────────────┘
 --
 -- MICRO-PARTITIONS (CRITICAL INTERVIEW TOPIC):
 -- ┌─────────────────────────────────────────────────────────────────────────┐
--- │                                                                        │
--- │  Original Table:                                                       │
--- │  ┌─────┬──────────┬────────┬─────────┐                                │
--- │  │ ID  │ NAME     │ CITY   │ AMOUNT  │                                │
+-- │                                                                         │
+-- │  Original Table:                                                        │
+-- │  ┌─────┬──────────┬────────┬─────────┐                                  │
+-- │  │ ID  │ NAME     │ CITY   │ AMOUNT  │                                  │
 -- │  ├─────┼──────────┼────────┼─────────┤                                │
 -- │  │ 1   │ Alice    │ NYC    │ 100     │  ──┐                           │
 -- │  │ 2   │ Bob      │ LA     │ 200     │    ├─ Micro-Partition 1       │

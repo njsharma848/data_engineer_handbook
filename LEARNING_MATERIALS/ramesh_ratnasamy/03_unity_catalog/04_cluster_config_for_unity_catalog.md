@@ -556,48 +556,48 @@ Understanding access modes is a frequently tested topic. Each mode has specific 
 ┌─────────────────────────────────────────────────────────────────┐
 │                    SINGLE USER MODE                             │
 │                                                                 │
-│  ┌───────────────────────────────────────┐                     │
-│  │           Cluster                      │                     │
-│  │  ┌─────────────────────────────────┐  │                     │
-│  │  │  Single User's Processes       │  │                     │
-│  │  │  - Python, Scala, R, SQL       │  │                     │
-│  │  │  - Full library support        │  │                     │
-│  │  │  - Init scripts allowed        │  │                     │
-│  │  │  - DBFS access (legacy)        │  │                     │
-│  │  └─────────────────────────────────┘  │                     │
-│  │  Unity Catalog: SUPPORTED             │                     │
-│  └───────────────────────────────────────┘                     │
+│  ┌───────────────────────────────────────┐                      │
+│  │           Cluster                     │                      │
+│  │  ┌─────────────────────────────────┐  │                      │
+│  │  │  Single User's Processes        │  │                      │
+│  │  │  - Python, Scala, R, SQL        │  │                      │
+│  │  │  - Full library support         │  │                      │
+│  │  │  - Init scripts allowed         │  │                      │
+│  │  │  - DBFS access (legacy)         │  │                      │
+│  │  └─────────────────────────────────┘  │                      │
+│  │  Unity Catalog: SUPPORTED             │                      │
+│  └───────────────────────────────────────┘                      │
 │  Only ONE user can use this cluster                             │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
 │                      SHARED MODE                                │
 │                                                                 │
-│  ┌───────────────────────────────────────┐                     │
-│  │           Cluster                      │                     │
-│  │  ┌──────────┐  ┌──────────┐          │                     │
-│  │  │  User A  │  │  User B  │  ...     │                     │
-│  │  │(isolated)│  │(isolated)│          │                     │
-│  │  └──────────┘  └──────────┘          │                     │
-│  │  Process isolation enforced           │                     │
-│  │  Some library restrictions            │                     │
-│  │  Unity Catalog: SUPPORTED             │                     │
-│  └───────────────────────────────────────┘                     │
+│  ┌───────────────────────────────────────┐                      │
+│  │           Cluster                     │                      │
+│  │  ┌──────────┐  ┌──────────┐           │                      │
+│  │  │  User A  │  │  User B  │  ...      │                      │
+│  │  │(isolated)│  │(isolated)│           │                      │
+│  │  └──────────┘  └──────────┘           │                      │
+│  │  Process isolation enforced           │                      │
+│  │  Some library restrictions            │                      │
+│  │  Unity Catalog: SUPPORTED             │                      │
+│  └───────────────────────────────────────┘                      │
 │  Multiple users share; each is process-isolated                 │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
-│                 NO ISOLATION SHARED MODE                         │
+│                 NO ISOLATION SHARED MODE                        │
 │                                                                 │
-│  ┌───────────────────────────────────────┐                     │
-│  │           Cluster                      │                     │
-│  │  ┌──────────────────────────────────┐ │                     │
-│  │  │  All Users (NO isolation)        │ │                     │
-│  │  │  User A, User B, User C...      │ │                     │
-│  │  │  Shared process space            │ │                     │
-│  │  └──────────────────────────────────┘ │                     │
-│  │  Unity Catalog: NOT SUPPORTED         │                     │
-│  └───────────────────────────────────────┘                     │
+│  ┌───────────────────────────────────────┐                      │
+│  │           Cluster                     │                      │
+│  │  ┌──────────────────────────────────┐ │                      │
+│  │  │  All Users (NO isolation)        │ │                      │
+│  │  │  User A, User B, User C...       │ │                      │
+│  │  │  Shared process space            │ │                      │
+│  │  └──────────────────────────────────┘ │                      │
+│  │  Unity Catalog: NOT SUPPORTED         │                      │
+│  └───────────────────────────────────────┘                      │
 │  LEGACY mode -- avoid for new workloads                         │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -645,7 +645,7 @@ Not all Unity Catalog features are available in every runtime version. Understan
 │  - Supported for 2+ years                                  │
 │  - Receives security patches and bug fixes                 │
 │  - Recommended for production workloads                    │
-│  - Examples: 11.3 LTS, 12.2 LTS, 13.3 LTS, 14.3 LTS     │
+│  - Examples: 11.3 LTS, 12.2 LTS, 13.3 LTS, 14.3 LTS        │
 │                                                            │
 │  BEST PRACTICE: Always use the latest LTS for production   │
 └────────────────────────────────────────────────────────────┘

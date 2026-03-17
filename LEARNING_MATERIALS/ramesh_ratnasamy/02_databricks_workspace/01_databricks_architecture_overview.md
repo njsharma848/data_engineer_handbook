@@ -207,11 +207,11 @@ Houses all your resources for network isolation.
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
 │  │                         CONTROL PLANE                                 │  │
 │  │                                                                       │  │
-│  │  ┌──────────────┐  ┌─────────────────┐  ┌────────────────────────┐   │  │
-│  │  │  Web UI       │  │ Cluster Manager │  │   Unity Catalog        │   │  │
-│  │  │  (Browser)    │  │ (Provisioning,  │  │   (Governance,         │   │  │
-│  │  │              │  │  Scaling)        │  │    Access Control)     │   │  │
-│  │  └──────────────┘  └─────────────────┘  └────────────────────────┘   │  │
+│  │  ┌──────────────┐  ┌─────────────────┐  ┌────────────────────────┐    │  │
+│  │  │  Web UI      │  │ Cluster Manager │  │   Unity Catalog        │    │  │
+│  │  │  (Browser)   │  │ (Provisioning,  │  │   (Governance,         │    │  │
+│  │  │              │  │  Scaling)       │  │    Access Control)     │    │  │
+│  │  └──────────────┘  └─────────────────┘  └────────────────────────┘    │  │
 │  │                                                                       │  │
 │  │  ┌──────────────────────────────────────────────────────────────┐     │  │
 │  │  │  Workspace Metadata Storage (Notebooks, Jobs, Spark Logs)    │     │  │
@@ -219,7 +219,7 @@ Houses all your resources for network isolation.
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                    SERVERLESS COMPUTE PLANE                            │  │
+│  │                    SERVERLESS COMPUTE PLANE                           │  │
 │  │         (Pre-allocated VMs, fast startup, managed by Databricks)      │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
@@ -232,18 +232,18 @@ Houses all your resources for network isolation.
 │                        CUSTOMER SUBSCRIPTION                                │
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │                    CLASSIC COMPUTE PLANE                               │  │
+│  │                    CLASSIC COMPUTE PLANE                              │  │
 │  │         (VMs provisioned on-demand in your cloud account)             │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │               MANAGED RESOURCE GROUP                                   │  │
+│  │               MANAGED RESOURCE GROUP                                  │  │
 │  │                                                                       │  │
-│  │  ┌────────────────┐  ┌──────────────┐  ┌─────────────────────────┐   │  │
-│  │  │ S3 Bucket      │  │  IAM Role     │  │  Security Groups        │   │  │
-│  │  │ (Workspace     │  │              │  │  + VPC                  │   │  │
-│  │  │  Cloud Storage)│  │              │  │                         │   │  │
-│  │  └────────────────┘  └──────────────┘  └─────────────────────────┘   │  │
+│  │  ┌────────────────┐  ┌──────────────┐  ┌─────────────────────────┐    │  │
+│  │  │ S3 Bucket      │  │  IAM Role    │  │  Security Groups        │    │  │
+│  │  │ (Workspace     │  │              │  │  + VPC                  │    │  │
+│  │  │  Cloud Storage)│  │              │  │                         │    │  │
+│  │  └────────────────┘  └──────────────┘  └─────────────────────────┘    │  │
 │  │                                                                       │  │
 │  │  ┌──────────────────────────────────────────────────────────────┐     │  │
 │  │  │  Unity Catalog Access Connector (if UC enabled)              │     │  │
@@ -281,11 +281,11 @@ Unity Catalog is Databricks' unified governance layer. Key details for exam prep
 
 ```
 ┌──────────────────────────────────────────┐
-│              METASTORE                    │
+│              METASTORE                   │
 │  ┌────────────────────────────────────┐  │
-│  │           CATALOG                   │  │
+│  │           CATALOG                  │  │
 │  │  ┌──────────────────────────────┐  │  │
-│  │  │          SCHEMA               │  │  │
+│  │  │          SCHEMA              │  │  │
 │  │  │  ┌────────┐  ┌────────────┐  │  │  │
 │  │  │  │ TABLE  │  │   VIEW     │  │  │  │
 │  │  │  └────────┘  └────────────┘  │  │  │

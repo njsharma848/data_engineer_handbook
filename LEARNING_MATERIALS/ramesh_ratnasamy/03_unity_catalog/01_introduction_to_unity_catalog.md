@@ -54,8 +54,6 @@ Any data engineering project requires the ability to:
 | Cloud Provider | Storage Service |
 |---------------|----------------|
 | **AWS** | Amazon S3 |
-| **Azure** | Azure Data Lake Storage (ADLS) Gen2 |
-| **Google Cloud** | Google Cloud Storage (GCS) |
 
 **For This Course:**
 - We're working in AWS
@@ -184,7 +182,7 @@ A **distributed file system** that's fully integrated within Databricks.
 
 **Abstraction Layer:**
 - Provides abstraction over cloud storage
-- Works with Amazon S3, Azure Data Lake Storage, GCS
+- Works with Amazon S3
 - Simplifies access to cloud storage
 
 ### How DBFS Works in AWS
@@ -698,7 +696,7 @@ In the upcoming lessons, we'll:
 
 ### Q5: How does Unity Catalog support multi-cloud environments?
 
-**A:** Unity Catalog provides a consistent governance layer regardless of the underlying cloud provider (AWS, Azure, GCP). It abstracts cloud-specific storage access through Storage Credentials and External Locations, and supports Delta Sharing for cross-cloud and cross-organization data sharing without data copying.
+**A:** Unity Catalog provides a consistent governance layer on AWS. It abstracts cloud-specific storage access through Storage Credentials and External Locations, and supports Delta Sharing for cross-cloud and cross-organization data sharing without data copying.
 
 ### Q6: How does Unity Catalog relate to Data Mesh architecture?
 

@@ -279,7 +279,7 @@ Efficiently moving data between Medallion layers requires incremental processing
 +====================================================================+
 |                                                                     |
 |  Cloud Storage                                                      |
-|  (S3 / ADLS / GCS)    [Primary: Amazon S3]                          |
+|  (Amazon S3)                          |
 |       |                                                             |
 |       | (Auto Loader detects new files automatically)               |
 |       v                                                             |

@@ -106,7 +106,7 @@ If the job crashes during Step 2:
 ```
 
 This is elegant because it reduces atomicity to a single atomic operation: creating a file.
-Cloud storage systems (S3, GCS) provide atomic file creation, and Delta Lake leverages
+Cloud storage systems (S3) provide atomic file creation, and Delta Lake leverages
 this primitive to build transaction atomicity.
 
 ## Consistency: Valid State to Valid State
@@ -281,7 +281,7 @@ system crashes immediately after the commit, the data won't be lost.
 ### How Delta Lake Implements Durability
 
 Delta Lake achieves durability by leveraging the durability guarantees of the underlying cloud
-storage system. When you write to S3 or GCS, those systems replicate your data across
+storage system. When you write to S3, the system replicates your data across
 multiple availability zones (and often multiple data centers). Once a write is acknowledged, the
 data is durable.
 
@@ -332,7 +332,7 @@ and only checks for conflicts at commit time. This is a good fit for data lakes 
 2. **Conflicts are rare**: In most data lake workloads, different jobs write to different partitions
    or different tables. Actual conflicts are uncommon.
 
-3. **Cloud storage doesn't support locks**: S3 and GCS don't have native locking mechanisms.
+3. **Cloud storage doesn't support locks**: S3 doesn't have native locking mechanisms.
    OCC doesn't require locks.
 
 ### The OCC Process in Detail

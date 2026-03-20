@@ -5,7 +5,7 @@
 Alright, let's shift gears and talk about Lakehouse Federation. While Delta Sharing is about
 sharing your Databricks data with others, Lakehouse Federation is about the opposite direction --
 bringing external data INTO Databricks. In the real world, organizations have data spread across
-many different systems: MySQL databases, PostgreSQL, SQL Server, Snowflake, BigQuery, Redshift,
+many different systems: MySQL databases, PostgreSQL, SQL Server, Snowflake, Redshift,
 and more. Traditionally, if you wanted to query that data from Databricks, you'd need to build
 ETL pipelines to copy the data into Delta Lake first. That takes time, costs money, and creates
 stale copies.
@@ -92,9 +92,9 @@ Supported Data Sources:
 │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘  │
 │                                                                │
 │  Cloud Data Warehouses:                                        │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐  │
-│  │Snowflake │ │ BigQuery │ │ Redshift │ │ Azure Synapse    │  │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────────────────────────┐    │
+│  │Snowflake │ │ Redshift │ │ Any JDBC-compatible DW       │    │
+│  └──────────┘ └──────────┘ └──────────────────────────────┘    │
 │                                                                │
 │  Other:                                                        │
 │  ┌──────────┐ ┌──────────────────────────────────────────────┐ │
@@ -325,7 +325,7 @@ Lakehouse Federation Limitations:
 
 1. **Lakehouse Federation** lets you query external databases from Databricks without moving data
 2. **Two key objects**: Connection (credentials) and Foreign Catalog (metadata)
-3. **Supported sources**: MySQL, PostgreSQL, SQL Server, Snowflake, BigQuery, Redshift, and more
+3. **Supported sources**: MySQL, PostgreSQL, SQL Server, Snowflake, Redshift, and more
 4. **Three-level namespace** is preserved: foreign_catalog.schema.table
 5. **Query pushdown** optimizes performance by sending filters to the external system
 6. **Read-only access** -- you cannot modify data in external systems through federation

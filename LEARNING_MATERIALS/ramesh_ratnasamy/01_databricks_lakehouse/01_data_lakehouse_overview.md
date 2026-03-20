@@ -163,7 +163,7 @@ Raw data is ingested directly into the data lake without any initial cleansing o
 
 This approach allowed for quicker solution development and faster ingestion times.
 
-Data lakes were built on cheap storage solutions like HDFS and cloud object stores such as Amazon S3, Azure Data Lake Storage Gen2, and Google Cloud Storage, which kept the costs low.
+Data lakes were built on cheap storage solutions like HDFS and cloud object stores such as Amazon S3, which kept the costs low.
 
 They also utilized open source file formats like parquet, ORC and Avro, allowing for a wide range of tools and libraries to be used for processing and analysis.
 
@@ -193,7 +193,7 @@ To solve this, companies often copied a subset of the data from the data lake to
 |                          v                                          |
 |  +======================================================+           |
 |  |                  DATA LAKE                            |          |
-|  |          (HDFS / S3 / ADLS / GCS)                      |         |
+|  |          (HDFS / Amazon S3)                      |         |
 |  |        Parquet, ORC, Avro, JSON, CSV                  |          |
 |  +======================================================+           |
 |           |                              |                          |
@@ -295,7 +295,7 @@ This eliminates the need to copy the data into a separate data warehouse.
 |  |  +--------------------------------------------------+|           |
 |  |  |  Unity Catalog (Governance + Access Control)      ||          |
 |  |  +--------------------------------------------------+|           |
-|  |  |  Cloud Object Storage (S3 / ADLS / GCS)          ||           |
+|  |  |  Cloud Object Storage (Amazon S3)                ||           |
 |  |  +--------------------------------------------------+|           |
 |  +======================================================+           |
 |         |              |                |                           |

@@ -88,7 +88,7 @@ DLT naturally fits the Bronze-Silver-Gold medallion pattern:
 Medallion Architecture with DLT:
 
   Cloud Storage              DLT Pipeline
-  (S3/GCS)
+  (S3)
                     ┌──────────────────────────────────────────┐
   ┌──────────┐     │                                          │
   │ Raw JSON │     │  ┌──────────┐  ┌──────────┐  ┌────────┐ │

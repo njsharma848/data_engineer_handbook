@@ -556,7 +556,7 @@ Init scripts deserve deeper coverage as they appear on certification exams:
   - Workspace files
   - Unity Catalog Volumes
   - DBFS (legacy, being deprecated)
-  - Cloud storage (S3, GCS)
+  - Cloud storage (S3)
 - **Execution order**: Global init scripts run first, then cluster-scoped init scripts.
 - **Debugging**: Logs for init scripts are written to `/databricks/init_scripts/<cluster-id>/` and can be inspected if a script fails.
 

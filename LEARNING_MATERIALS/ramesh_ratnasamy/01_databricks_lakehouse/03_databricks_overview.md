@@ -13,10 +13,7 @@ At the core of Databricks is the open-source distributed compute engine called *
 **Key Facts:**
 - Founded by the creators of Apache Spark
 - Makes working with Spark easier by providing essential management layers
-- Available on all major cloud platforms:
-  - AWS
-  - Microsoft Azure
-  - Google Cloud
+- Available on all major cloud platforms (this course focuses on **AWS**)
 
 ```
 +====================================================================+
@@ -49,10 +46,10 @@ At the core of Databricks is the open-source distributed compute engine called *
 |                          |                                          |
 |           +--------------+--------------+                           |
 |           |              |              |                           |
-|     +-----+------+ +----+------+ +-----+------+                    |
-|     | AWS        | | Azure     | | Google     |                    |
-|     | (primary)  | |           | | Cloud      |                    |
-|     +------------+ +-----------+ +------------+                    |
+|              +-----+------+                                        |
+|              | AWS        |                                        |
+|              | (primary)  |                                        |
+|              +------------+                                        |
 +=====================================================================+
 ```
 
@@ -268,89 +265,46 @@ An **AI assistant** that helps:
 
 ---
 
-## Cloud Platform Integration
-
-Databricks is available on all three major cloud platforms:
-- AWS
-- Microsoft Azure
-- Google Cloud
-
-### AWS: Cloud Integration
+## Cloud Platform Integration (AWS)
 
 On AWS, Databricks is deployed directly into the customer's AWS account. Databricks clusters run as EC2 instances within your VPC, and data resides in your own S3 buckets.
 
-**Key AWS Integration Points:**
-- IAM roles for authentication and access control
-- S3 for data storage (the primary data plane storage)
-- VPC peering for secure network connectivity between the control plane and data plane
-- AWS KMS for encryption key management
+### Key AWS Integration Points
+
+- **IAM** roles for authentication and access control
+- **S3** for data storage (the primary data plane storage)
+- **VPC** peering for secure network connectivity between the control plane and data plane
+- **AWS KMS** for encryption key management
+- **CloudWatch** for monitoring Databricks workloads and analyzing performance
+- **AWS CodePipeline** for CI/CD (Continuous Integration and Continuous Deployment)
 - Separate Databricks account billing (independent from the AWS bill)
-
-### Common Integrations Across All Platforms
-
-#### 1. Security and Governance
-
-Leverages cloud provider services:
-- AWS Identity and Access Management (IAM)
-- Azure Active Directory
-- Google Cloud IAM
-
-#### 2. Storage Services
-
-Integrates with:
-- Amazon S3
-- Azure Data Lake Storage Gen2
-- Google Cloud Storage
-
-#### 3. Compute Resources
-
-Underlying virtual machines for Databricks clusters are provided by the cloud providers themselves.
-
-#### 4. Monitoring Services
-
-Can use cloud provider monitoring services to:
-- Track Databricks workloads
-- Analyze performance
-
-#### 5. DevOps Integration
-
-Integrates with DevOps services such as:
-- AWS CodePipeline
-- Azure DevOps
-- Google Cloud Build
-
-**Purpose**: Enable Continuous Integration and Continuous Deployment (CI/CD)
 
 ```
 +====================================================================+
-|         DATABRICKS CLOUD INTEGRATION COMPARISON                      |
+|         DATABRICKS AWS INTEGRATION                                   |
 +====================================================================+
 |                                                                     |
-|              AWS              Azure            GCP                  |
-|  +-----------+--------------+-----------------+---------------+     |
-|  | Deployment| 3rd-party    | 1st-party       | 3rd-party     |    |
-|  |           | integration  | service         | integration   |     |
-|  +-----------+--------------+-----------------+---------------+     |
-|  | Storage   | S3           | ADLS Gen2       | GCS           |     |
-|  +-----------+--------------+-----------------+---------------+     |
-|  | Identity  | AWS IAM      | Azure AD /      | Google IAM    |     |
-|  |           |              | Entra ID        |               |     |
-|  +-----------+--------------+-----------------+---------------+     |
-|  | Billing   | Separate     | Unified         | Separate      |     |
-|  |           | (Databricks  | (Azure bill)    | (Databricks   |     |
-|  |           |  account)    |                 |  account)     |     |
-|  +-----------+--------------+-----------------+---------------+     |
-|  | Networking| VPC          | VNet            | VPC           |     |
-|  |           | peering      | injection       | peering       |     |
-|  +-----------+--------------+-----------------+---------------+     |
-|  | Key Vault | AWS KMS      | Azure Key       | Cloud KMS     |     |
-|  |           |              | Vault           |               |     |
-|  +-----------+--------------+-----------------+---------------+     |
-|  | Monitoring| CloudWatch   | Azure Monitor   | Cloud         |     |
-|  |           |              |                 | Monitoring    |     |
-|  +-----------+--------------+-----------------+---------------+     |
-|  | DevOps    | CodePipeline | Azure DevOps    | Cloud Build   |     |
-|  +-----------+--------------+-----------------+---------------+     |
+|              AWS                                                    |
+|  +-----------+--------------+                                       |
+|  | Deployment| 3rd-party    |                                       |
+|  |           | integration  |                                       |
+|  +-----------+--------------+                                       |
+|  | Storage   | S3           |                                       |
+|  +-----------+--------------+                                       |
+|  | Identity  | AWS IAM      |                                       |
+|  +-----------+--------------+                                       |
+|  | Billing   | Separate     |                                       |
+|  |           | (Databricks  |                                       |
+|  |           |  account)    |                                       |
+|  +-----------+--------------+                                       |
+|  | Networking| VPC peering  |                                       |
+|  +-----------+--------------+                                       |
+|  | Key Mgmt  | AWS KMS      |                                       |
+|  +-----------+--------------+                                       |
+|  | Monitoring| CloudWatch   |                                       |
+|  +-----------+--------------+                                       |
+|  | DevOps    | CodePipeline |                                       |
+|  +-----------+--------------+                                       |
 +=====================================================================+
 ```
 
@@ -358,7 +312,7 @@ Integrates with DevOps services such as:
 
 ## Summary
 
-Databricks is a **Spark-based, unified data analytics platform** that's optimized for each of the major cloud providers.
+Databricks is a **Spark-based, unified data analytics platform** that's optimized for the major cloud providers (this course focuses on AWS).
 
 ### What We've Covered:
 
@@ -546,7 +500,7 @@ Understanding how Databricks compares to competitors is valuable for interviews.
 | **Core engine** | Apache Spark | Proprietary (SnowPark for Spark-like) | Serverless (Presto/Trino for queries) | Multiple engines |
 | **Open source** | Heavy (Spark, Delta, MLflow) | Minimal | Moderate | Minimal |
 | **Storage format** | Delta Lake (open) | Proprietary | Parquet/Iceberg | Delta Lake |
-| **Multi-cloud** | Yes (AWS, Azure, GCP) | Yes (AWS, Azure, GCP) | AWS only | Azure primarily |
+| **Multi-cloud** | Yes | Yes | AWS only | Azure primarily |
 | **ML support** | Excellent (MLflow, notebooks) | Growing (SnowPark ML) | SageMaker integration | Built-in |
 | **Streaming** | Native (Structured Streaming) | Limited (Snowpipe) | Kinesis/Glue Streaming | Event streams |
 | **Governance** | Unity Catalog | Built-in | Lake Formation | Purview |
@@ -558,7 +512,7 @@ Understanding how Databricks compares to competitors is valuable for interviews.
 ## KEY INTERVIEW QUESTIONS AND ANSWERS
 
 ### Q1: What is Databricks, and how does it relate to Apache Spark?
-**A:** Databricks is a unified data analytics platform built on top of Apache Spark, founded by the creators of Spark. While Spark is the open-source distributed compute engine at the core, Databricks adds essential management layers including simplified cluster management, an integrated notebook IDE, optimized runtimes (up to 5x faster than vanilla Spark), the Photon query engine, Delta Lake for ACID transactions, Unity Catalog for governance, and workflow orchestration. It is available as a managed service on AWS, Azure, and GCP.
+**A:** Databricks is a unified data analytics platform built on top of Apache Spark, founded by the creators of Spark. While Spark is the open-source distributed compute engine at the core, Databricks adds essential management layers including simplified cluster management, an integrated notebook IDE, optimized runtimes (up to 5x faster than vanilla Spark), the Photon query engine, Delta Lake for ACID transactions, Unity Catalog for governance, and workflow orchestration. On AWS, Databricks deploys into the customer's AWS account using EC2 instances, S3 for storage, IAM for access control, and VPC peering for secure connectivity.
 
 ### Q2: What is the difference between the Control Plane and the Data Plane in Databricks?
 **A:** The Control Plane is managed by Databricks and includes the web UI, REST APIs, notebook service, cluster manager, job scheduler, and Unity Catalog metadata. The Data Plane runs in the customer's own cloud subscription and includes the actual compute clusters (VMs) and cloud object storage where data resides. This separation ensures that customer data never leaves their cloud account -- only metadata and commands travel to the control plane -- which is critical for security and compliance.
@@ -566,8 +520,8 @@ Understanding how Databricks compares to competitors is valuable for interviews.
 ### Q3: What are the different cluster types in Databricks, and when would you use each?
 **A:** Databricks offers four main compute options: (1) All-Purpose Clusters for interactive development and exploration, shared among users, manually started and stopped; (2) Job Clusters for automated production jobs, created on-demand and terminated after the job completes, which is more cost-effective; (3) SQL Warehouses for SQL analytics, BI tool queries, and dashboards with built-in autoscaling; (4) Serverless compute for instant startup with no cluster management, available for notebooks, jobs, and SQL warehouses with pay-per-use pricing.
 
-### Q4: How does Databricks integrate with cloud providers? What makes Azure different?
-**A:** Databricks integrates with all three major cloud providers by leveraging their native services for storage (S3, ADLS Gen2, GCS), identity management (IAM, Azure AD, Google IAM), networking (VPCs/VNets), key management (KMS, Key Vault), and monitoring (CloudWatch, Azure Monitor). Azure is unique because it hosts Databricks as a first-party service, which provides unified billing through the Azure portal and direct Microsoft support for both Azure and Databricks issues, unlike AWS and GCP where billing and support are handled separately.
+### Q4: How does Databricks integrate with AWS?
+**A:** On AWS, Databricks integrates with native services: S3 for storage, IAM for identity and access management, VPC peering for secure networking, KMS for encryption key management, CloudWatch for monitoring, and CodePipeline for CI/CD. Databricks is deployed as a third-party integration into the customer's AWS account. Clusters run as EC2 instances in the customer's VPC, and data stays in the customer's S3 buckets. Billing is separate -- Databricks charges appear on a separate Databricks bill, not on the AWS bill.
 
 ### Q5: What is the Photon query engine and when should you use it?
 **A:** Photon is a high-performance vectorized query engine written in C++ that runs natively within the Databricks runtime. It provides up to 8x performance improvement over the standard Databricks runtime for SQL and DataFrame operations. You should enable Photon for SQL-heavy workloads, BI dashboard queries, and large-scale ETL jobs that involve scanning, filtering, and aggregating large datasets. Photon is compatible with the Spark API so no code changes are needed -- you simply select a Photon-enabled runtime when creating a cluster.

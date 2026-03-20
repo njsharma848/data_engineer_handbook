@@ -15,7 +15,7 @@ happens when things go wrong.
 ## What Is a Checkpoint?
 
 A checkpoint is a persistent record of a streaming query's progress stored on durable storage
-(S3, GCS, etc.). It tracks:
+(S3). It tracks:
 
 ```
 Checkpoint Contents:
@@ -114,7 +114,7 @@ Checkpoint Location Rules:
 
 2. DURABLE storage (cloud storage, not local disk)
    ✓ s3://my-bucket/checkpoints/stream_a
-   ✓ /mnt/checkpoints/stream_a  (mount point to S3/GCS)
+   ✓ /mnt/checkpoints/stream_a  (mount point to S3)
    ✗ /tmp/checkpoints/stream_a  (local -- lost on node failure)
 
 3. NEVER delete or modify manually
@@ -265,7 +265,7 @@ and will attempt to reprocess all files in the source directory.
 5. **Never delete checkpoints** unless you intend to reprocess all data from scratch
 6. **Deleting a checkpoint** causes the stream to reprocess everything, potentially creating
    duplicates in the target
-7. **Checkpoint location must be on durable storage** (S3, GCS) -- not local disk
+7. **Checkpoint location must be on durable storage** (S3) -- not local disk
 8. **query.id** persists across restarts (from checkpoint); **query.runId** is unique per run
 9. **Compatible query changes** (adding filters, columns) work with existing checkpoints;
    **incompatible changes** (different source, changed aggregation keys) require a new checkpoint

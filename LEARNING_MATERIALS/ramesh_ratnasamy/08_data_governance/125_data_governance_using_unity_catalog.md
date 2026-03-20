@@ -182,7 +182,7 @@ Governance Implications:
 ┌─────────────────┬──────────────────────────────────────────────┐
 │ Managed Tables  │ External Tables                              │
 ├─────────────────┼──────────────────────────────────────────────┤
-│ Data stored in  │ Data stored in your own S3/GCS bucket       │
+│ Data stored in  │ Data stored in your own S3 bucket       │
 │ UC-managed      │                                              │
 │ storage         │                                              │
 ├─────────────────┼──────────────────────────────────────────────┤

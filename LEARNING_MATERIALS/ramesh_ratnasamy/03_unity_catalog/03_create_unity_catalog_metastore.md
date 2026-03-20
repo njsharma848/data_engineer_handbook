@@ -827,27 +827,6 @@ Understanding how metastore setup differs across cloud providers is important fo
 |  Access: IAM roles for cross-account access                         |
 +---------------------------------------------------------------------+
 
-+---------------------------------------------------------------------+
-|                    AZURE DATABRICKS                                 |
-|                                                                     |
-|  Account Console: https://accounts.azure.databricks.net             |
-|  Identity Provider: Microsoft Entra ID (formerly Azure AD)          |
-|  Admin Requirement: Global Administrator in Entra ID                |
-|  Auto-creation: Since November 2023 for new subscriptions           |
-|  Default Storage: ADLS Gen2 (optional, not recommended)             |
-|  Access Connector: Azure-native first-party service                 |
-+---------------------------------------------------------------------+
-
-+---------------------------------------------------------------------+
-|                     GCP DATABRICKS                                  |
-|                                                                     |
-|  Account Console: https://accounts.gcp.databricks.com               |
-|  Identity Provider: Google Identity or SCIM                         |
-|  Admin Requirement: Account admin in Databricks                     |
-|  Auto-creation: Since November 2023 for new accounts                |
-|  Default Storage: GCS bucket (optional, not recommended)            |
-|  Access: Service accounts for storage access                        |
-+---------------------------------------------------------------------+
 ```
 
 ### Key Rule: One Metastore Per Region

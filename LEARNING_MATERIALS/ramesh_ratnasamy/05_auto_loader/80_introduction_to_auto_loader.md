@@ -4,7 +4,7 @@
 
 Alright, let's talk about Auto Loader -- one of the most powerful and practical features in
 Databricks for ingesting data from cloud storage. If you've ever had to build a pipeline that
-picks up new files as they land in S3 or GCS, you know how much complexity is involved. You need
+picks up new files as they land in S3, you know how much complexity is involved. You need
 to track which files you've already processed, handle failures gracefully, deal with duplicate
 files, and make sure you don't miss anything. Auto Loader solves all of these problems out of
 the box.
@@ -87,7 +87,7 @@ Auto Loader has two modes for discovering new files:
 ```
 Directory Listing Mode:
 
-  Auto Loader        Cloud Storage (S3/GCS)
+  Auto Loader        Cloud Storage (S3)
   ┌──────────┐       ┌─────────────────────┐
   │          │──LIST──│  /landing/orders/   │
   │  Spark   │       │   file1.json ✓      │
@@ -121,8 +121,8 @@ File Notification Mode:
   Cloud Storage         Event Service         Auto Loader
   ┌────────────┐      ┌───────────────┐      ┌──────────┐
   │   S3       │─────▶│  SQS Queue    │─────▶│  Spark   │
-  │  Bucket    │ Event│  (or GCS      │ Poll │ Streaming│
-  │            │ Notif│  Pub/Sub)     │      │   Job    │
+  │  Bucket    │ Event│               │ Poll │ Streaming│
+  │            │ Notif│               │      │   Job    │
   │ New file   │      │               │      │          │
   │ lands!     │      │  file3.json   │      │          │
   └────────────┘      └───────────────┘      └──────────┘
@@ -131,7 +131,6 @@ File Notification Mode:
 In file notification mode, Auto Loader automatically sets up cloud-native event notification
 services:
 - **AWS**: S3 Events → SQS Queue (or SNS → SQS)
-- **GCP**: GCS Notifications → Pub/Sub
 
 When a new file lands, the cloud storage service pushes an event to a message queue. Auto Loader
 polls the queue to discover new files instead of listing the entire directory. This is dramatically
@@ -240,6 +239,6 @@ Auto Loader supports the following file formats:
 5. **`trigger(availableNow=True)`** is the recommended trigger for scheduled batch-like
    processing
 6. **Auto Loader is preferred over COPY INTO** for production pipelines, especially at scale
-7. **File notification mode** uses cloud-native services (SQS on AWS, Pub/Sub on GCP)
+7. **File notification mode** uses cloud-native services (SQS on AWS)
 8. **Exactly-once semantics** through checkpointing and idempotent writes
 9. **Auto Loader incrementally processes files** -- it only picks up new files since the last run

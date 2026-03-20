@@ -247,7 +247,7 @@ auto-optimization, data retention, and more. Set these at creation time when pos
 **A:** The three-level namespace is `catalog.schema.table`. This provides a hierarchical organization for data governance, access control, and data discovery. For example: `my_catalog.my_schema.employees`.
 
 ### Q6: How do you create an external Delta table?
-**A:** You create an external Delta table by specifying the LOCATION clause in your CREATE TABLE statement. The LOCATION points to an external storage path (e.g., S3, GCS) where the data files will be stored. Example: `CREATE TABLE my_table (id INT) LOCATION 's3://my-bucket/path'`.
+**A:** You create an external Delta table by specifying the LOCATION clause in your CREATE TABLE statement. The LOCATION points to an external storage path (e.g., S3) where the data files will be stored. Example: `CREATE TABLE my_table (id INT) LOCATION 's3://my-bucket/path'`.
 
 ### Q7: When should you choose an external table over a managed table?
 **A:** Choose an external table when you need the data to persist independently of the table metadata, when data is shared across multiple systems or platforms, when you need full control over the storage location, or when you want to prevent accidental data deletion when the table is dropped.

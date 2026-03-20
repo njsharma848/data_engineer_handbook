@@ -88,7 +88,6 @@ When you create a Databricks workspace, a **default workspace cloud storage** is
 | Cloud Provider | Storage Service |
 |----------------|----------------|
 | **AWS** | Amazon S3 |
-| **GCP** | Google Cloud Storage |
 
 ### What is it Used For?
 
@@ -251,7 +250,7 @@ Houses all your resources for network isolation.
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 │  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │          EXTERNAL DATA (S3 / GCS)                                     │  │
+│  │          EXTERNAL DATA (Amazon S3)                                     │  │
 │  └───────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -335,7 +334,7 @@ You should now have a good understanding of:
 **A:** The two main components are the **Control Plane** and the **Compute Plane**. The Control Plane runs in the Databricks subscription and handles backend services like the Web UI, Cluster Manager, Unity Catalog, and workspace metadata storage. The Compute Plane is where data processing occurs and can be either Classic (running in the customer's cloud subscription) or Serverless (running in the Databricks subscription).
 
 ### Q2: Where does customer data reside in the Databricks architecture?
-**A:** Customer data always resides in the **customer's AWS account**, never in the Databricks subscription. The workspace cloud storage (S3 on AWS, GCS on GCP) is created in the customer's account. The control plane only stores metadata such as notebook revisions and job run details, not customer business data.
+**A:** Customer data always resides in the **customer's AWS account**, never in the Databricks subscription. The workspace cloud storage (S3) is created in the customer's AWS account. The control plane only stores metadata such as notebook revisions and job run details, not customer business data.
 
 ### Q3: What is the Managed Resource Group and what resources does it contain?
 **A:** When a Databricks workspace is provisioned on AWS, Databricks creates resources in the **customer's VPC** within their AWS account (not in the Databricks account). These resources are managed by Databricks on the customer's behalf and include: an S3 bucket (workspace storage), IAM Role, Unity Catalog Access Connector (if UC enabled), security groups, and the VPC itself. Cluster EC2 instances for classic compute are also created here.

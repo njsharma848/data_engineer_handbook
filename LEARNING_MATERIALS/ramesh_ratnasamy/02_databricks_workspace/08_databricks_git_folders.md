@@ -27,9 +27,9 @@ Databricks Git Folders is a **visual Git client** made available in the Databric
 
 Integrate Databricks projects with popular Git providers:
 - GitHub
-- Azure DevOps
 - Bitbucket
 - GitLab
+- AWS CodeCommit
 - And more
 
 ---
@@ -76,7 +76,7 @@ Difficult to manage complex projects with multiple interdependent notebooks.
 ### 3. No DevOps Integration
 
 **Problem:**
-- Doesn't integrate with DevOps tools (e.g., Azure DevOps)
+- Doesn't integrate with DevOps tools (e.g., GitHub Actions, AWS CodePipeline)
 - No automated testing
 - No automated deployment
 
@@ -161,7 +161,7 @@ Databricks integrates with popular Git providers:
 | Provider | Support |
 |----------|---------|
 | **GitHub** | ✅ Fully supported |
-| **Azure DevOps** | ✅ Fully supported |
+| **AWS CodeCommit** | ✅ Fully supported |
 | **Bitbucket** | ✅ Fully supported |
 | **GitLab** | ✅ Fully supported |
 | **AWS CodeCommit** | ✅ Fully supported |
@@ -506,7 +506,7 @@ For production CI/CD, Databricks Asset Bundles are the modern approach:
 
 - **DABs** allow you to define Databricks resources (jobs, pipelines, clusters) as code in YAML files alongside your notebooks and scripts in a Git repository.
 - A `databricks.yml` file defines the bundle configuration including targets (dev, staging, prod), resource definitions, and variable substitutions.
-- DABs integrate with CI/CD pipelines (GitHub Actions, Azure DevOps, GitLab CI) to deploy resources automatically.
+- DABs integrate with CI/CD pipelines (GitHub Actions, AWS CodePipeline, GitLab CI) to deploy resources automatically.
 - This is the evolution beyond simple Git Folders -- Git Folders manage code, while DABs manage code AND infrastructure together.
 
 ```
@@ -573,7 +573,7 @@ Best practices:
 ## KEY INTERVIEW QUESTIONS AND ANSWERS
 
 ### Q1: What are Databricks Git Folders and why are they needed?
-**A:** Git Folders (formerly Databricks Repos) is a visual Git client integrated into the Databricks workspace that enables collaborative development using standard Git workflows. They are needed because the built-in notebook version history has significant limitations: it only tracks individual notebooks (not project-wide changes), lacks branching and merging capabilities, does not support pull requests for code review, and cannot integrate with CI/CD pipelines. Git Folders solve all of these by connecting Databricks directly to Git providers like GitHub, Azure DevOps, GitLab, and Bitbucket.
+**A:** Git Folders (formerly Databricks Repos) is a visual Git client integrated into the Databricks workspace that enables collaborative development using standard Git workflows. They are needed because the built-in notebook version history has significant limitations: it only tracks individual notebooks (not project-wide changes), lacks branching and merging capabilities, does not support pull requests for code review, and cannot integrate with CI/CD pipelines. Git Folders solve all of these by connecting Databricks directly to Git providers like GitHub, AWS CodeCommit, GitLab, and Bitbucket.
 
 ### Q2: What is the difference between the Databricks GitHub App and Personal Access Tokens for Git integration?
 **A:** The Databricks GitHub App uses OAuth-based authentication, providing stronger security, granular per-repository access control, automatic token management, and easier setup. Personal Access Tokens (PATs) use token-based authentication with broader access scope, require manual token creation and rotation, and are less secure since a leaked token grants access to all repositories the token has permissions for. Databricks recommends the GitHub App approach. For CI/CD pipelines, Service Principals with OAuth tokens are preferred over PATs.

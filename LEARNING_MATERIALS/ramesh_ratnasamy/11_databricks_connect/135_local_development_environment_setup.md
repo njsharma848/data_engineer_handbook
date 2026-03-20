@@ -39,7 +39,7 @@ Local Development Prerequisites:
 │  4. AUTHENTICATION                                               │
 │     - Databricks personal access token (PAT)                     │
 │     - OR OAuth (M2M or U2M)                                      │
-│     - OR Azure AD token (for Azure Databricks)                   │
+│     - OR AWS IAM credentials (for AWS Databricks)                │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```

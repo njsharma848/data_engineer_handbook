@@ -7,7 +7,7 @@ Databricks persona designed for analysts, data engineers, and anyone who needs t
 queries against data in the lakehouse. Think of it as a full SQL analytics environment built
 on top of the Databricks Lakehouse Platform.
 
-If you've used tools like AWS Redshift, Google BigQuery, or Snowflake, Databricks SQL serves
+If you've used tools like AWS Redshift or Snowflake, Databricks SQL serves
 a similar purpose -- it provides a SQL-native interface for querying data, building
 visualizations, and creating dashboards. But unlike those standalone data warehouses, DBSQL
 queries data directly in your Delta Lake tables, which means there's no data copying or ETL

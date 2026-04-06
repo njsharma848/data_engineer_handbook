@@ -11,7 +11,7 @@
 - [python_dsa/shubham_wadekar](https://github.com/greenwichg/de_interview_prep/blob/main/LEARNING_MATERIALS/shubham_wadekar/CORE%20TOPICS/DSA%20FOR%20DATA%20ENGINEERS/DSA%20FOR%20DATA%20ENGINEERS.pdf)
 
 ## PySpark
-- [delta_lake](https://github.com/greenwichg/de_interview_prep/tree/main/PREPARATION_STRATEGY/frameworks/delta_lake)
+- [delta_lake](https://github.com/greenwichg/data_engineer_handbook/blob/main/CHEATSHEETS/frameworks/delta_lake/usecases/delta_lake_usecase_set.md)
 - [ajay_kadiyala](https://github.com/greenwichg/de_interview_prep/blob/main/LEARNING_MATERIALS/ajay_kadiyala/core_tech_stacks/big_data_and_streaming/pyspark_interview_kit.pdf)
 - [shubham_wadekar](https://github.com/greenwichg/de_interview_prep/blob/main/LEARNING_MATERIALS/shubham_wadekar/CORE%20TOPICS/PYSPARK/CODING%20Q%26A/SCENARIO%20BASED%20Q%26A.pdf)
 - [pyspark_json_cheatsheet.md](https://github.com/greenwichg/de_interview_prep/blob/main/PREPARATION_STRATEGY/frameworks/pyspark/cheatsheets/pyspark_json_cheatsheet.md)

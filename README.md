@@ -4,8 +4,41 @@ A comprehensive, curated collection of resources, cheatsheets, interview prepara
 
 ---
 
+## At a Glance
+
+| Category | Count |
+|---|---|
+| PySpark Coding Patterns | 100+ (interview, statistical, and use-case patterns) |
+| Company Interview Experiences | 70+ (Amazon, Google, Meta, Microsoft, Netflix, and more) |
+| Snowflake Hands-On Modules | 22 sections with SQL scripts |
+| SQL Pattern Collections | 20+ curated sets (joins, CTEs, window functions, time series) |
+| Spark Performance Topics | 15+ deep-dive guides |
+| System Design Scenarios | 3 end-to-end designs (ingestion, ride-hailing, banking) |
+| Career Roadmaps | 8 contributor plans (30-day, 90-day, continuous) |
+| Data Modeling Scenarios | Real-world models (food delivery, ride-hailing) |
+| Databricks Modules | Lakehouse, Unity Catalog, Streaming |
+
+## Tech Stack Covered
+
+| Domain | Technologies |
+|---|---|
+| **Languages** | SQL, Python, PySpark |
+| **Big Data** | Apache Spark, Hadoop, Apache Kafka, HBase |
+| **Cloud - AWS** | Glue, Lambda, Step Functions, S3, CloudFormation, CloudWatch |
+| **Cloud - Azure** | Azure Blob Storage, Azure Data Factory |
+| **Cloud - GCP** | GCP Cloud Storage, BigQuery |
+| **Data Warehousing** | Snowflake, Databricks, Delta Lake |
+| **Orchestration** | Apache Airflow, Jenkins CI/CD |
+| **Data Modeling** | Star Schema, Snowflake Schema, SCD Types 1/2/3, Normalization |
+| **Streaming** | Spark Structured Streaming, Kafka |
+| **Tools & Frameworks** | dbt, Docker, Kubernetes, Git |
+
+---
+
 ## Table of Contents
 
+- [At a Glance](#at-a-glance)
+- [Tech Stack Covered](#tech-stack-covered)
 - [Overview](#overview)
 - [Repository Structure](#repository-structure)
 - [CHEATSHEETS](#cheatsheets)

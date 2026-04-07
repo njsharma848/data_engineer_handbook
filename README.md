@@ -16,6 +16,10 @@ A comprehensive, curated collection of resources, cheatsheets, interview prepara
 - [SPARK DEEP DIVE](#spark-deep-dive)
 - [SYSTEM DESIGN](#system-design)
 - [How to Use This Repository](#how-to-use-this-repository)
+  - [For Interview Preparation](#for-interview-preparation)
+  - [Last Minute Revise (Interview Day)](#last-minute-revise-interview-day)
+  - [For Day-to-Day Reference](#for-day-to-day-reference)
+  - [For Learning a New Technology](#for-learning-a-new-technology)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -276,6 +280,15 @@ Data engineering system design scenarios with detailed solutions.
 5. **Learn from others** - Read real interview experiences in `LEARNING_MATERIALS/ankita_gulati/` and `INTERVIEW_PRACTICE/interview_experiences/`
 6. **Master system design** - Practice with scenarios in `SYSTEM_DESIGN/`
 7. **Deep dive into Spark** - Study `SPARK_DEEP_DIVE/` for architecture and performance questions
+
+### Last Minute Revise (Interview Day)
+A curated quick-reference checklist located at [`CHEATSHEETS/last_minute_revise/last_min_revise_plan.md`](CHEATSHEETS/last_minute_revise/last_min_revise_plan.md) with direct links to the most important materials across topics:
+
+- **SQL** - Top interview question sets, SQL interview guides
+- **Python** - ETL essentials, DSA for data engineers, coding Q&A
+- **PySpark** - Delta Lake use cases, interview kits, 100+ coding patterns, JSON cheatsheets, SQL-to-PySpark cross-reference
+
+Use this as your final review before walking into the interview.
 
 ### For Day-to-Day Reference
 - Use `CHEATSHEETS/` as a quick-reference for SQL, PySpark, and Snowflake syntax

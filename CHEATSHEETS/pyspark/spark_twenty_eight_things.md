@@ -16,7 +16,7 @@
 14. **Static allocation: fixed for the app's lifetime.**
 15. **Dynamic allocation: Spark returns and reclaims resources on demand.**
 16. **Executor memory has 3 regions: on-heap, off-heap, and overhead.**
-17. **On-heap has 3 subregions: Reserved (300MB hardcoded), user (your data structures), and unified (shared between execution and storage).**
+17. **On-heap has 3 subregions: Reserved (300MB hardcoded), user (your data structures), <br> and unified (shared between execution and storage).**
 18. **Unified size: spark.memory.fraction. Default 0.6. With 4GB: (4096 - 300) × 0.6 = 2,877 MB.**
 19. **Storage/Execution ratio: spark.memory.storageFraction (default 0.5). Storage = 2,877 × 0.5 = 1,438 MB. Execution gets the other half.**
 20. **The boundary is crossable, but not equal. Both sides can borrow from each other. Only execution can force storage to free up space.**

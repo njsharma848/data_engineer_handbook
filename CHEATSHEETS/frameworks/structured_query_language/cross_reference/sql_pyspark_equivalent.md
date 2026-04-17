@@ -1581,22 +1581,61 @@ WHERE emp_id != 456;
 
 ```sql
 -- SQL
+-- Build the full breadcrumb path for every category in a hierarchical tree
+-- (e.g., "Electronics > Computers > Laptops > Gaming Laptops").
+-- Traverses the tree TOP-DOWN from all roots down to all leaves, accumulating
+-- the path string one level at a time.
 WITH RECURSIVE category_path AS (
+
+    -- ANCHOR: Start recursion at every root category.
+    -- A "root" is any category with no parent (parent_id IS NULL), which is
+    -- the structural definition of a top-level category in this table.
+    -- Unlike queries that anchor on a single ID, this anchor can produce
+    -- MANY rows — one per root — and the recursion fans out from each.
+    --
+    -- `path` is initialized to just the category's own name because roots
+    -- have no ancestors to prepend. For "Electronics", path starts as "Electronics".
     SELECT
-        category_id, category_name, parent_id,
+        category_id,
+        category_name,
+        parent_id,
         category_name AS path
     FROM categories
     WHERE parent_id IS NULL
 
     UNION ALL
 
+    -- RECURSIVE STEP: For each category currently in `category_path`,
+    -- find its children and extend their path string by appending the
+    -- child's name to the parent's already-built path. Each iteration
+    -- extends the tree one level deeper:
+    --   Iteration 1: finds children of each root
+    --   Iteration 2: finds grandchildren (children of those children)
+    --   ...continues until we reach leaves (categories with no children),
+    --      at which point the join produces no new rows and recursion stops.
+    --
+    -- Join direction note: `c.parent_id = cp.category_id` means
+    -- "find categories (c) whose parent is someone already in the CTE (cp)"
+    -- — this walks DOWN the hierarchy.
+    --
+    -- Path accumulation note: `cp.path || ' > ' || c.category_name` builds
+    -- on the parent's already-complete path. Because cp.path already contains
+    -- the full breadcrumb from root to parent, we only need to append the
+    -- current category's own name. The full path compounds naturally as
+    -- recursion descends the tree.
     SELECT
-        c.category_id, c.category_name, c.parent_id,
-        cp.path || ' > ' || c.category_name
+        c.category_id,
+        c.category_name,
+        c.parent_id,
+        cp.path || ' > ' || c.category_name AS path
     FROM categories c
     JOIN category_path cp ON c.parent_id = cp.category_id
 )
-SELECT * FROM category_path;
+
+-- Return every category with its full breadcrumb path.
+-- Each row contains one category and the complete path from its root to itself.
+SELECT *
+FROM category_path;
 ```
 
 ### Direction Templates

@@ -1,36 +1,86 @@
 # 02 — Brute Force First
 
 ## 1. When to Use
-- You are **stuck** and do not yet see the trick; any correct answer beats a blank screen.
-- The prompt says *"find all…"*, *"count all…"*, *"check every pair"* — the naive definition **is** a valid solution.
-- Small constraints (`n <= 20`, `n <= 100`) where the obvious `O(n^2)` / `O(2^n)` already fits.
-- You want a **reference oracle** to test a faster solution against.
-- Interviewer says *"walk me through your thinking"* — brute force is the natural first step before optimising.
+- You are **stuck** and have not yet seen the trick — any correct answer beats a blank screen, and writing one out often reveals the structure.
+- The problem statement says *"find all…"*, *"count all…"*, *"check every pair"*, *"enumerate…"* — the naive definition **is** a valid solution.
+- **Small constraints** where the obvious solution already fits: `n <= 20` for subsets, `n <= 10` for permutations, `n <= 500` for triple loops.
+- You need a **reference oracle** to test a faster solution against (random input + `assert fast(x) == brute(x)`).
+- The interviewer says *"walk me through your thinking"* — brute force is the natural first step, and makes your optimisation story compelling.
+- You need to **prove a lower bound** before attempting optimisation (if the answer list itself has `k` items, you cannot do better than `Ω(k)`).
+- The problem is **output-sensitive** (e.g. generate all paths, list all valid parses) — there may be no asymptotic improvement possible.
 
-Signal words: *"simplest"*, *"straightforward"*, *"naive"*, *"try all"*, *"enumerate"*.
+Signal words: *"simplest"*, *"straightforward"*, *"naive"*, *"try all"*, *"enumerate"*, *"check each possibility"*.
 
 ## 2. Core Idea
-The brute force mirrors the problem statement literally: enumerate the search space, check each candidate, return the best. It is almost always correct (just slow), and writing it forces you to nail down inputs, outputs, and edge cases — which is exactly the state you need to be in to spot a speed-up.
+The brute force mirrors the problem statement literally: enumerate the search space, check each candidate against the feasibility/scoring rule, return the best. It is almost always correct (just slow), and writing it forces you to pin down **inputs, outputs, and edge cases** — which is exactly the mental state you need to spot a speed-up. Optimisations come from identifying repeated work or redundant candidates *in* the brute force; without it you have nothing to optimise.
 
 ## 3. Template
+
+### Generic enumerate-check-update skeleton
 ```python
 def brute_force(inputs):
     best = None  # or float('inf'), or []
-    # 1. Enumerate every candidate the problem mentions
     for candidate in generate_candidates(inputs):
-        # 2. Check feasibility / scoring directly from the definition
         if is_valid(candidate, inputs):
             score = evaluate(candidate, inputs)
-            # 3. Track the best answer under the problem's comparator
-            if best is None or score < best_score:
-                best, best_score = candidate, score
+            if best is None or score < best:
+                best = candidate, score
     return best
+```
 
-# Common enumeration shapes:
-#   - all pairs:         for i in range(n): for j in range(i+1, n): ...
-#   - all subarrays:     for i in range(n): for j in range(i, n): ...
-#   - all subsets:       for mask in range(1 << n): ...
-#   - all permutations:  itertools.permutations(arr)
+### Common enumeration shapes
+```python
+# All pairs (i < j)                 -> O(n^2)
+for i in range(n):
+    for j in range(i + 1, n):
+        check(arr[i], arr[j])
+
+# All triples (i < j < k)           -> O(n^3)
+for i in range(n):
+    for j in range(i + 1, n):
+        for k in range(j + 1, n):
+            check(arr[i], arr[j], arr[k])
+
+# All subarrays (contiguous)        -> O(n^2) ranges
+for i in range(n):
+    for j in range(i, n):
+        check(arr[i:j+1])
+
+# All subsets via bitmask           -> O(2^n)
+for mask in range(1 << n):
+    subset = [arr[i] for i in range(n) if mask >> i & 1]
+    check(subset)
+
+# All permutations                  -> O(n!)
+from itertools import permutations
+for p in permutations(arr):
+    check(p)
+
+# All k-combinations                -> O(C(n,k))
+from itertools import combinations
+for c in combinations(arr, k):
+    check(c)
+```
+
+### Recursive enumeration with pruning (one small step toward backtracking)
+```python
+def enumerate_with_prune(partial, remaining):
+    if is_goal(partial):
+        record(partial); return
+    if is_infeasible(partial):
+        return                    # prune — the earlier, the better
+    for choice in remaining:
+        partial.append(choice)
+        enumerate_with_prune(partial, remaining - {choice})
+        partial.pop()
+```
+
+### Brute force as an oracle
+```python
+import random
+for _ in range(1000):
+    arr = [random.randint(-5, 5) for _ in range(random.randint(0, 8))]
+    assert fast(arr) == brute(arr), arr
 ```
 
 ## 4. Classic Problems
@@ -40,18 +90,21 @@ def brute_force(inputs):
 - **LC 46 — Permutations** (Medium): enumerate all `n!` orderings via backtracking.
 - **LC 39 — Combination Sum** (Medium): try every combination; then prune.
 
-## 5. Worked Example — Maximum Subarray, brute first
+## 5. Worked Example — "Maximum Subarray" as a ladder
 Problem: given `nums = [-2, 1, -3, 4, -1, 2, 1, -5, 4]`, find the contiguous subarray with the largest sum.
 
-### Step 1. Literal brute force, `O(n^3)`
+### Step 1. The literal brute force, `O(n^3)`
+Walk all `(i, j)` windows, sum them freshly each time.
+
 ```python
 best = float('-inf')
 for i in range(n):
     for j in range(i, n):
-        s = sum(nums[i:j+1])   # recompute every time
+        s = sum(nums[i:j+1])   # recomputes from scratch
         best = max(best, s)
 ```
-Trace (first few `(i, j)` windows):
+
+Trace of the first few `(i, j)` windows:
 
 | `i` | `j` | `nums[i..j]` | `s` | `best` |
 |---|---|---|---|---|
@@ -63,10 +116,10 @@ Trace (first few `(i, j)` windows):
 | 3 | 5 | `[4, -1, 2]` | 5 | 5 |
 | 3 | 6 | `[4, -1, 2, 1]` | 6 | 6 |
 
-Answer `= 6`, subarray `[4, -1, 2, 1]`. Correct, but `O(n^3)`.
+Answer `= 6`, window `[4, -1, 2, 1]`. Correct, but `O(n^3)`.
 
 ### Step 2. Spot the repeated work
-`sum(nums[i:j+1])` recomputes from scratch. If we already know `sum(nums[i:j])`, we can extend by one step. Replace the inner `sum` with a running total:
+`sum(nums[i:j+1])` recomputes from scratch. Keep a running total instead:
 
 ```python
 for i in range(n):
@@ -75,31 +128,58 @@ for i in range(n):
         s += nums[j]
         best = max(best, s)
 ```
-Now `O(n^2)`.
+
+Now `O(n^2)`. What changed: the inner work dropped from `O(j - i + 1)` to `O(1)`.
 
 ### Step 3. Spot the deeper redundancy
-Every outer `i` restarts the running sum. But if `s` ever goes negative, starting fresh at `j+1` can only do better. That observation — reached only **because the brute force made the repeated work obvious** — is Kadane's algorithm:
+Every outer `i` restarts `s` at `0`. But if the running sum ever goes negative, restarting is strictly better than continuing — no matter what comes next. That observation, visible *only* because the brute force exposed the running-sum structure, is Kadane's algorithm:
 
 ```python
-best = cur = nums[0]
+cur = best = nums[0]
 for x in nums[1:]:
-    cur = max(x, cur + x)
+    cur = max(x, cur + x)       # extend or restart at x
     best = max(best, cur)
 ```
-`O(n)`, answer still `6`. The brute force was the ladder to the insight, not a throwaway.
+
+`O(n)`, answer still `6`. The brute force was the ladder to the insight; it was never a throwaway.
+
+### Step 4. Use the brute force as your oracle
+While writing Kadane, keep the `O(n^2)` version around and randomly test:
+
+```python
+import random
+for _ in range(1000):
+    arr = [random.randint(-5, 5) for _ in range(random.randint(1, 12))]
+    assert kadane(arr) == brute_n2(arr), arr
+```
+
+If Kadane breaks on an edge case, the oracle will tell you the exact input.
 
 ## 6. Common Variations
-- **Generate-and-test with pruning**: start brute, then add `if is_infeasible(partial): continue` — smooths into backtracking.
-- **Bitmask brute force**: for `n <= 20`, iterate `mask in range(1 << n)` to enumerate subsets in `O(2^n * n)`.
-- **Brute force as oracle**: keep it in your test harness and `assert fast(x) == brute(x)` on random inputs.
-- **Randomised brute force**: when the search space is huge, sampling a few candidates can surface structure.
-- **Meet-in-the-middle**: brute force both halves separately to turn `O(2^n)` into `O(2^(n/2))`.
+- **Generate-and-test with pruning**: start brute, add `if is_infeasible(partial): continue` — smooths into backtracking (n-queens, sudoku).
+- **Bitmask brute force**: for `n <= 20`, iterate `mask in range(1 << n)` to enumerate subsets in `O(2^n · n)` — often the cleanest form.
+- **Permutation brute force**: `itertools.permutations(arr)` for `n <= 10`; pairs naturally with TSP / assignment problems.
+- **Random sampling**: when the search space is astronomical, sampling a few million candidates can reveal structure (Monte Carlo).
+- **Meet in the middle**: brute both halves separately and combine, turning `O(2^n)` into `O(2^{n/2})` — LC 1755, subset-sum variants.
+- **Brute force as oracle**: keep the slow version in the test harness forever; `assert fast(x) == brute(x)` on random inputs is the single highest-leverage debugging tool.
+- **Brute force as a correctness anchor**: when stuck on a complex optimisation, solve the problem two ways and ensure they agree — if they disagree, at least one is wrong.
+- **Brute force for small cases, pattern-match to formula**: run brute for `n = 1..10`, eyeball the sequence, look it up on OEIS — sometimes reveals a closed form (`2^n`, `n!`, Catalan, etc.).
+- **Brute force submissions**: for easy problems under loose constraints, the `O(n^2)` solution is the answer — do not over-engineer.
+- **Edge cases surfaced by brute force**: empty input, single element, all equal, sorted/reverse sorted, all negatives, integer overflow — enumerate these explicitly in your brute-force tests.
+
+### When brute force IS the final answer
+- Constraints are small (`n ≤ 20`, `grid ≤ 10x10`, `len(s) ≤ 12`).
+- The problem asks you to **list** all configurations (subsets, permutations, paths) — you cannot produce them faster than they exist.
+- Output-sensitive problems where answer size equals work.
+- "Generate the lexicographically smallest..." — brute + sort can beat an attempt at a clever constructive algorithm.
 
 ## 7. Related Patterns
 - **Backtracking** — brute force + pruning on a decision tree.
 - **Dynamic Programming** — brute force recursion + memoisation on overlapping subproblems.
 - **Sliding Window / Two Pointers** — almost always the `O(n)` upgrade of an `O(n^2)` subarray brute force.
-- **Hashing** — the typical way to kill the inner loop in an `O(n^2)` pair-search brute force.
+- **Hashing** — the typical way to kill the inner loop of an `O(n^2)` pair-search brute force.
 - **Greedy** — when brute force reveals that the locally-best choice is always part of the global optimum.
+- **Binary Search on Answer** — when brute search over a parameter is monotone in feasibility.
+- **Time & Space Complexity** — brute force is the baseline you measure optimisations against.
 
-Distinguishing note: brute force is not a destination, it is a **launchpad**. Its job is to (a) give you a correct answer, (b) expose the redundant work, and (c) anchor test cases for the optimised version.
+**Distinguishing note**: brute force is not a destination, it is a **launchpad**. Its job is to (a) give you a correct answer, (b) expose the redundant work, and (c) anchor test cases for the optimised version. If you cannot write the brute force for a problem, you do not understand the problem yet.

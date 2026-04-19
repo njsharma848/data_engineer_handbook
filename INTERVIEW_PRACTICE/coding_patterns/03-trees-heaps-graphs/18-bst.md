@@ -39,9 +39,9 @@ These underpin deletion (replace-with-successor), iterators (LC 173), and range 
 ### Template A — search (iterative is simpler than recursive)
 ```python
 def search(root, target):
-    while root:
+    while root:                                 # `while root` stops on None (falsy)
         if target == root.val: return root
-        root = root.left if target < root.val else root.right
+        root = root.left if target < root.val else root.right   # ternary: one-line branch
     return None
 ```
 
@@ -49,12 +49,12 @@ def search(root, target):
 ```python
 def insert(root, val):
     if root is None:
-        return TreeNode(val)
+        return TreeNode(val)                    # base case: create new leaf
     if val < root.val:
-        root.left  = insert(root.left,  val)
+        root.left  = insert(root.left,  val)    # GOTCHA: MUST reassign .left — recursion returns (possibly new) subtree root
     else:
         root.right = insert(root.right, val)
-    return root
+    return root                                  # caller writes `root = insert(root, x)` to capture potential new root
 ```
 
 ### Template C — delete (classic three-case)
@@ -62,32 +62,32 @@ def insert(root, val):
 def delete(root, key):
     if root is None: return None
     if key < root.val:
-        root.left = delete(root.left, key)
+        root.left = delete(root.left, key)     # reassign — subtree may change root
     elif key > root.val:
         root.right = delete(root.right, key)
     else:
-        # Case 1: no children
+        # Case 1: no children (leaf)
         if root.left is None and root.right is None:
             return None
-        # Case 2: one child
+        # Case 2: one child — return the existing child as new subtree root
         if root.left is None:  return root.right
         if root.right is None: return root.left
-        # Case 3: two children — replace with in-order successor
+        # Case 3: two children — replace with in-order successor (smallest in right subtree)
         succ = root.right
-        while succ.left:
+        while succ.left:                        # walk leftmost of right subtree
             succ = succ.left
-        root.val = succ.val
-        root.right = delete(root.right, succ.val)
+        root.val = succ.val                     # GOTCHA: copy VALUE only; don't reparent succ node itself
+        root.right = delete(root.right, succ.val)   # recursively delete the now-duplicate succ
     return root
 ```
 
 ### Template D — validate via bounds propagation
 ```python
 def is_valid(root, lo=float('-inf'), hi=float('inf')):
-    if root is None: return True
-    if not (lo < root.val < hi): return False
-    return (is_valid(root.left,  lo, root.val)
-        and is_valid(root.right, root.val, hi))
+    if root is None: return True                # GOTCHA: float defaults OK (immutable); float('-inf') is safe sentinel
+    if not (lo < root.val < hi): return False   # chained compare — strict `<` on both sides
+    return (is_valid(root.left,  lo, root.val)   # left: tighten UPPER bound to current val
+        and is_valid(root.right, root.val, hi))  # right: tighten LOWER bound. `and` short-circuits on False
 ```
 
 ### Template E — in-order iterator (kth smallest, BST iterator)
@@ -95,42 +95,42 @@ def is_valid(root, lo=float('-inf'), hi=float('inf')):
 def kth_smallest(root, k):
     stack = []
     node = root
-    while stack or node:
-        while node:                     # dive left
+    while stack or node:                 # continue while EITHER has work
+        while node:                       # dive-left phase
             stack.append(node); node = node.left
-        node = stack.pop()              # visit
+        node = stack.pop()                # visit phase — leftmost-pending
         k -= 1
-        if k == 0: return node.val
-        node = node.right               # dive right
+        if k == 0: return node.val        # GOTCHA: decrement BEFORE check — 1-indexed k, so k=1 returns smallest
+        node = node.right                 # then descend right subtree
 
-class BSTIterator:                       # LC 173 — amortised O(1) next
+class BSTIterator:                        # LC 173 — amortised O(1) next
     def __init__(self, root):
         self.stack = []
         self._push_left(root)
-    def _push_left(self, node):
+    def _push_left(self, node):           # underscore = "private by convention"
         while node:
             self.stack.append(node); node = node.left
     def next(self):
         node = self.stack.pop()
-        self._push_left(node.right)
+        self._push_left(node.right)       # after visiting, push lefts of right subtree
         return node.val
     def hasNext(self):
-        return bool(self.stack)
+        return bool(self.stack)           # bool(list) == len(list) > 0
 ```
 
 ### Template F — range sum / trim / filter by range
 ```python
 def range_sum(root, lo, hi):
     if root is None: return 0
-    if root.val < lo: return range_sum(root.right, lo, hi)   # prune left
-    if root.val > hi: return range_sum(root.left,  lo, hi)   # prune right
-    return root.val + range_sum(root.left, lo, hi) + range_sum(root.right, lo, hi)
+    if root.val < lo: return range_sum(root.right, lo, hi)   # prune left — all of left subtree is < lo
+    if root.val > hi: return range_sum(root.left,  lo, hi)   # prune right — all of right subtree is > hi
+    return root.val + range_sum(root.left, lo, hi) + range_sum(root.right, lo, hi)   # in-range: include + recurse both
 
 def trim(root, lo, hi):
     if root is None: return None
-    if root.val < lo: return trim(root.right, lo, hi)
+    if root.val < lo: return trim(root.right, lo, hi)   # GOTCHA: return NEW root; left subtree entirely discarded
     if root.val > hi: return trim(root.left,  lo, hi)
-    root.left  = trim(root.left,  lo, hi)
+    root.left  = trim(root.left,  lo, hi)                # reassign — subtree may shrink
     root.right = trim(root.right, lo, hi)
     return root
 ```
@@ -139,25 +139,25 @@ def trim(root, lo, hi):
 ```python
 def sorted_array_to_bst(arr):
     def go(lo, hi):
-        if lo > hi: return None
-        mid = (lo + hi) // 2
+        if lo > hi: return None                 # inclusive bounds; lo>hi means empty range
+        mid = (lo + hi) // 2                    # `//` integer division. GOTCHA: Python no overflow, C++/Java risk (lo+hi overflow)
         node = TreeNode(arr[mid])
-        node.left  = go(lo, mid - 1)
+        node.left  = go(lo, mid - 1)            # left half (excludes mid)
         node.right = go(mid + 1, hi)
         return node
-    return go(0, len(arr) - 1)
+    return go(0, len(arr) - 1)                  # inclusive both ends
 ```
 
 ### Template H — LCA in BST
 ```python
 def lca_bst(root, p, q):
     while root:
-        if p.val < root.val and q.val < root.val:
+        if p.val < root.val and q.val < root.val:    # both on left
             root = root.left
-        elif p.val > root.val and q.val > root.val:
+        elif p.val > root.val and q.val > root.val:  # both on right
             root = root.right
         else:
-            return root                  # split point
+            return root                  # split point — either between or equal to root
     return None
 ```
 
@@ -219,9 +219,9 @@ Carry `(lo, hi)` bounds down the recursion. At each node, `lo < node.val < hi` m
 def isValidBST(root):
     def go(node, lo, hi):
         if node is None: return True
-        if not (lo < node.val < hi): return False
+        if not (lo < node.val < hi): return False   # chained compare with `not`: val must be STRICTLY between
         return go(node.left, lo, node.val) and go(node.right, node.val, hi)
-    return go(root, float('-inf'), float('inf'))
+    return go(root, float('-inf'), float('inf'))    # seed with ±infinity sentinels
 ```
 
 ### Trace on the failing tree
@@ -269,13 +269,13 @@ Single-pass without bounds; keep the last value visited and check strictly incre
 
 ```python
 def isValidBST(root):
-    prev = [None]                         # mutable reference via list
+    prev = [None]                         # GOTCHA: single-element list to simulate mutable closure var (pre-`nonlocal` idiom)
     def inorder(node):
         if node is None: return True
         if not inorder(node.left): return False
-        if prev[0] is not None and node.val <= prev[0]:
+        if prev[0] is not None and node.val <= prev[0]:   # `<=` because duplicates invalidate strict BST
             return False
-        prev[0] = node.val
+        prev[0] = node.val                 # update predecessor AFTER check
         return inorder(node.right)
     return inorder(root)
 ```

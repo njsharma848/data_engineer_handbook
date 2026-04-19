@@ -30,48 +30,48 @@ Because the data structure is intrinsically sequential, most algorithms are `O(n
 ### Template A — dummy head for head-uncertain rewiring
 ```python
 class ListNode:
-    def __init__(self, val=0, nxt=None):
+    def __init__(self, val=0, nxt=None):      # GOTCHA: `next` shadows builtin — use `nxt` in __init__ params
         self.val = val
-        self.next = nxt
+        self.next = nxt                        # attribute is `.next`; param just named differently
 
 def pattern_with_dummy(head, should_drop):
-    dummy = ListNode(0, head)
+    dummy = ListNode(0, head)                  # dummy points to head; unifies head-change case
     prev = dummy
-    while prev.next:
+    while prev.next:                           # `while node:` auto-stops on None (falsy)
         if should_drop(prev.next):
-            prev.next = prev.next.next        # unlink
+            prev.next = prev.next.next        # unlink — GC reclaims old node since nothing references it
         else:
-            prev = prev.next                  # advance
-    return dummy.next
+            prev = prev.next                  # advance (ONLY when not dropping — else you skip the new prev.next)
+    return dummy.next                          # GOTCHA: return dummy.next (head may have changed), NOT head
 ```
 
 ### Template B — reverse in place (three-pointer rewire)
 ```python
 def reverse(head):
-    prev, curr = None, head
+    prev, curr = None, head                   # tuple-unpacking: simultaneous assignment
     while curr:
-        nxt = curr.next                       # save before rewire
-        curr.next = prev                      # rewire
-        prev = curr                           # advance prev
+        nxt = curr.next                       # GOTCHA: MUST save `next` BEFORE rewiring — else you lose the tail
+        curr.next = prev                      # rewire: flip the arrow
+        prev = curr                           # advance prev. GOTCHA: order matters — prev=curr BEFORE curr=nxt
         curr = nxt                            # advance curr
-    return prev                               # new head
+    return prev                               # new head (old last node; `curr` exits as None)
 ```
 
 ### Template C — slow/fast pointers (cycle detect, midpoint)
 ```python
 def middle(head):
     """For even-length n, returns the 2nd middle (n//2 + 1 in 1-indexed)."""
-    slow = fast = head
-    while fast and fast.next:
+    slow = fast = head                          # chained assignment: both point to same node initially
+    while fast and fast.next:                   # AND short-circuits: fast.next not accessed if fast is None
         slow = slow.next
-        fast = fast.next.next
+        fast = fast.next.next                   # GOTCHA: `fast.next.next` safe only because `fast.next` just checked
     return slow
 
 def has_cycle(head):
     slow = fast = head
     while fast and fast.next:
         slow = slow.next; fast = fast.next.next
-        if slow is fast: return True
+        if slow is fast: return True            # GOTCHA: `is` (identity) not `==` (value) — values may collide
     return False
 
 def cycle_start(head):
@@ -81,37 +81,37 @@ def cycle_start(head):
         slow = slow.next; fast = fast.next.next
         if slow is fast:
             ptr = head
-            while ptr is not slow:
+            while ptr is not slow:              # identity check — walks until pointers coincide (cycle entrance)
                 ptr = ptr.next; slow = slow.next
             return ptr
-    return None
+    return None                                 # no cycle detected
 ```
 
 ### Template D — merge two sorted lists (dummy + merge)
 ```python
 def merge(a, b):
-    dummy = ListNode()
+    dummy = ListNode()                         # default args give val=0, next=None
     tail = dummy
-    while a and b:
-        if a.val <= b.val:
+    while a and b:                             # loop exits when EITHER is None
+        if a.val <= b.val:                     # GOTCHA: `<=` (not `<`) preserves stability — a's equals come first
             tail.next = a; a = a.next
         else:
             tail.next = b; b = b.next
         tail = tail.next
-    tail.next = a or b                        # attach leftover
-    return dummy.next
+    tail.next = a or b                         # `a or b`: returns first truthy; `None or node` == node. Attaches leftover
+    return dummy.next                          # new head (never `head` — dummy is a throwaway)
 ```
 
 ### Template E — gap pointers (nth from end)
 ```python
 def remove_nth_from_end(head, n):
-    dummy = ListNode(0, head)
+    dummy = ListNode(0, head)                  # dummy handles "remove actual head" case
     lead = lag = dummy
-    for _ in range(n + 1):                    # +1 so lag ends one before the victim
-        lead = lead.next
-    while lead:
+    for _ in range(n + 1):                     # +1 so lag ends one before the victim (not ON it)
+        lead = lead.next                       # GOTCHA: if n > length, lead.next raises AttributeError — problem guarantees valid n
+    while lead:                                # advance both until lead falls off the end
         lead = lead.next; lag = lag.next
-    lag.next = lag.next.next
+    lag.next = lag.next.next                   # unlink victim
     return dummy.next
 ```
 
@@ -119,22 +119,22 @@ def remove_nth_from_end(head, n):
 ```python
 class Node:
     def __init__(self, key=0, val=0):
-        self.key, self.val = key, val
-        self.prev = self.next = None
+        self.key, self.val = key, val          # tuple-unpacking assignment (cleaner than two separate statements)
+        self.prev = self.next = None           # chained assignment: both set to same None (safe for immutables)
 
 class LRUCache:
     def __init__(self, cap):
         self.cap = cap
-        self.head, self.tail = Node(), Node()  # sentinels
-        self.head.next, self.tail.prev = self.tail, self.head
-        self.map = {}
+        self.head, self.tail = Node(), Node()  # sentinel nodes — no edge cases for empty list
+        self.head.next, self.tail.prev = self.tail, self.head   # simultaneous wire-up via tuple-assignment
+        self.map = {}                          # key → Node (so we can unlink in O(1) given a key)
 
-    def _remove(self, node):
-        node.prev.next = node.next
-        node.next.prev = node.prev
+    def _remove(self, node):                   # underscore prefix = "private by convention"
+        node.prev.next = node.next             # skip node from prev side
+        node.next.prev = node.prev             # skip node from next side
 
     def _add_front(self, node):
-        node.next = self.head.next
+        node.next = self.head.next             # GOTCHA: order matters — set new node's pointers BEFORE rewiring neighbours
         node.prev = self.head
         self.head.next.prev = node
         self.head.next = node
@@ -142,18 +142,18 @@ class LRUCache:
     def get(self, key):
         if key not in self.map: return -1
         node = self.map[key]
-        self._remove(node); self._add_front(node)
+        self._remove(node); self._add_front(node)   # move-to-front = mark as recently used
         return node.val
 
     def put(self, key, val):
         if key in self.map:
-            self._remove(self.map[key])
+            self._remove(self.map[key])        # unlink old node if key exists (will replace, not update in place)
         node = Node(key, val)
         self.map[key] = node
         self._add_front(node)
-        if len(self.map) > self.cap:
+        if len(self.map) > self.cap:           # evict AFTER insert — cleaner than checking before
             lru = self.tail.prev
-            self._remove(lru); del self.map[lru.key]
+            self._remove(lru); del self.map[lru.key]   # `del dict[key]` removes entry in O(1)
 ```
 
 Key mental tools:
@@ -201,29 +201,29 @@ Walk both lists, picking one from the first, one from the second, until one is e
 
 ```python
 def reorderList(head):
-    if not head or not head.next: return
+    if not head or not head.next: return       # GOTCHA: empty/single-node early return; `return` without value = `return None`
 
     # Step 1: find middle
     slow = fast = head
-    while fast.next and fast.next.next:          # ends slow at first-half tail
+    while fast.next and fast.next.next:        # different loop condition vs `while fast and fast.next`: ends slow EARLIER (at first-half tail, not second-middle)
         slow = slow.next
         fast = fast.next.next
 
     # Step 2: reverse second half
     second = slow.next
-    slow.next = None                             # cut
+    slow.next = None                            # cut — GOTCHA: without this, the two halves share tail and reversal creates a cycle
     prev = None
     while second:
-        nxt = second.next
+        nxt = second.next                       # save-before-rewire
         second.next = prev
         prev = second
         second = nxt
-    second = prev                                # head of reversed second half
+    second = prev                                # head of reversed second half (was the old tail)
 
-    # Step 3: merge alternating
+    # Step 3: merge alternating (zipper)
     first = head
-    while second:
-        f_next, s_next = first.next, second.next
+    while second:                                # second runs out first (it's the shorter half for odd n)
+        f_next, s_next = first.next, second.next   # tuple-unpack: save BOTH next pointers before any rewire
         first.next = second
         second.next = f_next
         first = f_next

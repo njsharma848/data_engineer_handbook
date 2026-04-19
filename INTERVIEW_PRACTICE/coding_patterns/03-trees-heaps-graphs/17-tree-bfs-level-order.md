@@ -30,18 +30,18 @@ BFS on a tree is a special case of BFS on an unweighted graph: the tree is a DAG
 
 ### Template A — canonical level order (list of lists)
 ```python
-from collections import deque
+from collections import deque                 # GOTCHA: NEVER `list.pop(0)` — O(n); deque.popleft is O(1)
 
 def level_order(root):
-    if root is None: return []
-    q = deque([root])
+    if root is None: return []                 # empty tree → empty list (NOT [[]])
+    q = deque([root])                           # deque takes an iterable; wrap root in a list
     out = []
     while q:
         layer = []
-        for _ in range(len(q)):                # freeze this layer's size
-            node = q.popleft()
+        for _ in range(len(q)):                # GOTCHA: snapshot len BEFORE inner loop — q grows as children are enqueued
+            node = q.popleft()                  # O(1); list.pop(0) would be O(n)
             layer.append(node.val)
-            if node.left:  q.append(node.left)
+            if node.left:  q.append(node.left)  # truthy check — None-children skipped
             if node.right: q.append(node.right)
         out.append(layer)
     return out
@@ -50,12 +50,12 @@ def level_order(root):
 ### Template B — minimum depth (first leaf wins)
 ```python
 def min_depth(root):
-    if root is None: return 0
-    q = deque([(root, 1)])
+    if root is None: return 0                   # empty tree → 0
+    q = deque([(root, 1)])                       # pair node with depth — no frozen-size needed
     while q:
-        node, d = q.popleft()
-        if node.left is None and node.right is None:
-            return d                            # first leaf = shallowest
+        node, d = q.popleft()                   # tuple-unpack in one step
+        if node.left is None and node.right is None:    # leaf = BOTH children None
+            return d                            # first leaf = shallowest (BFS visits levels in order)
         if node.left:  q.append((node.left, d + 1))
         if node.right: q.append((node.right, d + 1))
     return 0                                    # unreachable for non-empty tree
@@ -68,10 +68,10 @@ def right_side_view(root):
     q = deque([root])
     out = []
     while q:
-        sz = len(q)
+        sz = len(q)                             # freeze size — must be done BEFORE inner loop enqueues
         for i in range(sz):
             node = q.popleft()
-            if i == sz - 1:                     # last node in this layer
+            if i == sz - 1:                     # last node in this layer (i is 0-indexed)
                 out.append(node.val)
             if node.left:  q.append(node.left)
             if node.right: q.append(node.right)
@@ -84,17 +84,17 @@ def zigzag(root):
     if root is None: return []
     q = deque([root])
     out = []
-    ltr = True
+    ltr = True                                   # boolean toggles per layer
     while q:
-        layer = deque()
+        layer = deque()                          # GOTCHA: layer is deque (not list) for O(1) appendleft
         for _ in range(len(q)):
             node = q.popleft()
             if ltr: layer.append(node.val)
-            else:   layer.appendleft(node.val)
-            if node.left:  q.append(node.left)
+            else:   layer.appendleft(node.val)   # reverses layer order WITHOUT reversing queue itself
+            if node.left:  q.append(node.left)   # children always enqueued L→R
             if node.right: q.append(node.right)
-        out.append(list(layer))
-        ltr = not ltr
+        out.append(list(layer))                  # convert to list before storing (deque → list)
+        ltr = not ltr                            # flip for next layer
     return out
 ```
 
@@ -107,8 +107,8 @@ def connect(root):
         sz = len(q)
         for i in range(sz):
             node = q.popleft()
-            if i < sz - 1:
-                node.next = q[0]                # peek at head of queue
+            if i < sz - 1:                      # not the last in layer
+                node.next = q[0]                # GOTCHA: deque supports O(1) indexing at ends; q[0] peeks front
             if node.left:  q.append(node.left)
             if node.right: q.append(node.right)
     return root
@@ -120,14 +120,14 @@ from collections import defaultdict
 
 def vertical_order(root):
     if root is None: return []
-    cols = defaultdict(list)
-    q = deque([(root, 0)])                      # (node, col)
+    cols = defaultdict(list)                    # GOTCHA: defaultdict(list) auto-creates [] on first access — no KeyError
+    q = deque([(root, 0)])                      # (node, col) — root at column 0
     while q:
         node, c = q.popleft()
-        cols[c].append(node.val)
-        if node.left:  q.append((node.left,  c - 1))
-        if node.right: q.append((node.right, c + 1))
-    return [cols[c] for c in sorted(cols)]
+        cols[c].append(node.val)                 # BFS order within column preserved
+        if node.left:  q.append((node.left,  c - 1))   # left child → col -1
+        if node.right: q.append((node.right, c + 1))   # right child → col +1
+    return [cols[c] for c in sorted(cols)]       # sorted(dict) returns sorted KEYS — smallest col first
 ```
 
 ### Template G — DFS simulation of level order (when recursion is preferred)
@@ -136,9 +136,9 @@ def level_order_dfs(root):
     out = []
     def go(node, depth):
         if node is None: return
-        if depth == len(out): out.append([])
-        out[depth].append(node.val)
-        go(node.left, depth + 1)
+        if depth == len(out): out.append([])    # GOTCHA: lazy-create new level — len(out) == depth means this level missing
+        out[depth].append(node.val)              # indexing into list; [depth] must exist (ensured above)
+        go(node.left, depth + 1)                 # GOTCHA: DFS order, but per-level buckets still correct
         go(node.right, depth + 1)
     go(root, 0)
     return out
@@ -196,15 +196,15 @@ def zigzagLevelOrder(root):
     out = []
     ltr = True
     while q:
-        layer = deque()
+        layer = deque()                          # deque gives O(1) appendleft; list would be O(n)
         for _ in range(len(q)):
             node = q.popleft()
-            if ltr: layer.append(node.val)
-            else:   layer.appendleft(node.val)
+            if ltr: layer.append(node.val)       # L→R: dequeue order == output order
+            else:   layer.appendleft(node.val)   # R→L: each append goes to front
             if node.left:  q.append(node.left)
             if node.right: q.append(node.right)
-        out.append(list(layer))
-        ltr = not ltr
+        out.append(list(layer))                   # convert to list — don't store a deque in out
+        ltr = not ltr                             # flip boolean; `not` returns bool
     return out
 ```
 

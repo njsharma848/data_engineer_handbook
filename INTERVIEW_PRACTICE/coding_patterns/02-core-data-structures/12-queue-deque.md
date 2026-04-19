@@ -29,19 +29,19 @@ Three dominant flavours:
 
 ### Template A — BFS by layer (unweighted shortest path)
 ```python
-from collections import deque
+from collections import deque                # GOTCHA: NEVER `list.pop(0)` — O(n); deque.popleft is O(1)
 
 def bfs_shortest(start, target, neighbours):
     if start == target:
         return 0
-    q = deque([(start, 0)])
-    seen = {start}
+    q = deque([(start, 0)])                  # deque takes an iterable; tuple-packing avoids parallel lists
+    seen = {start}                           # set literal with ONE element; `{start}` NOT `{}` (that's an empty dict!)
     while q:
-        node, d = q.popleft()
+        node, d = q.popleft()                # tuple-unpack in one step; popleft is O(1) amortised
         for nxt in neighbours(node):
             if nxt == target:
                 return d + 1
-            if nxt not in seen:
+            if nxt not in seen:              # GOTCHA: mark seen on ENQUEUE (below), not dequeue — prevents duplicates
                 seen.add(nxt)
                 q.append((nxt, d + 1))
     return -1                                # unreachable
@@ -53,32 +53,33 @@ def bfs_levels(root, neighbours):
     q = deque([root])
     seen = {root}
     while q:
-        size = len(q)                        # freeze this layer
-        for _ in range(size):
+        size = len(q)                        # GOTCHA: snapshot BEFORE the inner loop — `q` grows as you enqueue children
+        for _ in range(size):                # `_` convention for unused loop var
             node = q.popleft()
             visit(node)
             for nxt in neighbours(node):
                 if nxt not in seen:
                     seen.add(nxt); q.append(nxt)
-        # depth advances implicitly per outer iteration
+        # depth advances implicitly per outer iteration (no explicit depth counter needed)
 ```
 
 ### Template C — Multi-source BFS (all sources distance 0)
 ```python
 def multi_source_bfs(grid, is_source):
-    m, n = len(grid), len(grid[0])
-    dist = [[-1] * n for _ in range(m)]
+    m, n = len(grid), len(grid[0])            # GOTCHA: grid[0] fails on empty grid — guard upstream
+    dist = [[-1] * n for _ in range(m)]       # list-comp per row — NEVER `[[-1]*n]*m` (shared rows!)
     q = deque()
     for r in range(m):
         for c in range(n):
             if is_source(grid[r][c]):
-                dist[r][c] = 0
+                dist[r][c] = 0                 # seed ALL sources with distance 0 — the "multi" in multi-source
                 q.append((r, c))
     while q:
         r, c = q.popleft()
-        for dr, dc in ((1,0), (-1,0), (0,1), (0,-1)):
+        for dr, dc in ((1,0), (-1,0), (0,1), (0,-1)):   # 4-dir; tuple-of-tuples is cheaper than list-of-lists
             nr, nc = r + dr, c + dc
             if 0 <= nr < m and 0 <= nc < n and dist[nr][nc] == -1 and grid[nr][nc] != 'wall':
+                # chained compare `0 <= nr < m` is short-circuit AND; bounds check BEFORE index
                 dist[nr][nc] = dist[r][c] + 1
                 q.append((nr, nc))
     return dist
@@ -87,16 +88,16 @@ def multi_source_bfs(grid, is_source):
 ### Template D — Monotonic deque (fixed-size sliding window maximum)
 ```python
 def max_sliding_window(arr, k):
-    dq = deque()                             # indices; arr[dq] strictly decreasing
+    dq = deque()                             # indices; arr[dq] strictly decreasing. GOTCHA: store INDICES not values (for age-based eviction)
     out = []
     for i, x in enumerate(arr):
-        while dq and dq[0] <= i - k:          # evict index that fell out of the window
-            dq.popleft()
-        while dq and arr[dq[-1]] < x:          # evict dominated values at the back
-            dq.pop()
+        while dq and dq[0] <= i - k:         # `while` (not `if`) — but at most one age-eviction fires per step
+            dq.popleft()                     # O(1); list.pop(0) would be O(n)
+        while dq and arr[dq[-1]] < x:        # `<` strict; `<=` also works here. dq[-1] peeks back end
+            dq.pop()                         # default pops from RIGHT end (unlike popleft)
         dq.append(i)
-        if i >= k - 1:
-            out.append(arr[dq[0]])             # front is the current window max
+        if i >= k - 1:                       # only emit AFTER first full window is formed (i.e. i>=k-1 means window covers [i-k+1..i])
+            out.append(arr[dq[0]])           # front is the current window max
     return out
 ```
 
@@ -110,16 +111,16 @@ def zero_one_bfs(start, target, neighbours_with_weights):
         node, d = dq.popleft()
         if node == target:
             return d
-        if d > dist[node]:                    # stale entry
+        if d > dist[node]:                    # stale entry. GOTCHA: we DON'T remove old entries; skip them lazily
             continue
         for nxt, w in neighbours_with_weights(node):
             nd = d + w
-            if nd < dist.get(nxt, float('inf')):
+            if nd < dist.get(nxt, float('inf')):   # dict.get(key, default) avoids KeyError
                 dist[nxt] = nd
                 if w == 0:
-                    dq.appendleft((nxt, nd))  # zero-weight: keep on the front
+                    dq.appendleft((nxt, nd))  # zero-weight: keep on the front (same layer)
                 else:
-                    dq.append((nxt, nd))      # unit-weight: push to the back
+                    dq.append((nxt, nd))      # unit-weight: push to the back (next layer)
     return -1
 ```
 
@@ -127,13 +128,13 @@ def zero_one_bfs(start, target, neighbours_with_weights):
 ```python
 class HitCounter:                              # LC 362
     def __init__(self):
-        self.q = deque()                       # timestamps in non-decreasing order
+        self.q = deque()                       # timestamps in non-decreasing order. GOTCHA: `self.q` not `q` (instance attr)
     def hit(self, t):
-        self.q.append(t)
+        self.q.append(t)                       # amortised O(1) append
     def getHits(self, t):
-        while self.q and self.q[0] <= t - 300:
-            self.q.popleft()
-        return len(self.q)
+        while self.q and self.q[0] <= t - 300:   # evict anything older than 300s window
+            self.q.popleft()                    # GOTCHA: t-300 strict vs non-strict depends on inclusive/exclusive window
+        return len(self.q)                     # len(deque) is O(1)
 ```
 
 Key mental tools:
@@ -181,13 +182,13 @@ def maxSlidingWindow(arr, k):
     dq = deque()
     out = []
     for i, x in enumerate(arr):
-        while dq and dq[0] <= i - k:
+        while dq and dq[0] <= i - k:        # step 1: evict stale (outside window) from front
             dq.popleft()
-        while dq and arr[dq[-1]] < x:
+        while dq and arr[dq[-1]] < x:       # step 2: evict dominated (smaller than x) from back
             dq.pop()
-        dq.append(i)
-        if i >= k - 1:
-            out.append(arr[dq[0]])
+        dq.append(i)                         # step 3: append current index
+        if i >= k - 1:                       # step 4: emit once first full window is complete
+            out.append(arr[dq[0]])           # front is max
     return out
 ```
 

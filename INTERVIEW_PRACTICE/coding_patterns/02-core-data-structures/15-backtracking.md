@@ -51,27 +51,27 @@ def backtrack(state):
 ```python
 def backtrack(path, choices, results):
     if is_goal(path):
-        results.append(path.copy())            # copy — path keeps mutating
+        results.append(path.copy())            # GOTCHA: MUST copy — `path` keeps mutating, appending it aliases all results!
         return
     for choice in choices_at(path):
         if not is_valid(path, choice):         # prune infeasible early
             continue
         path.append(choice)                    # choose
         backtrack(path, choices, results)      # explore
-        path.pop()                             # undo
+        path.pop()                             # undo — every append needs a matching pop
 ```
 
 ### Template B — subsets (include / exclude each index)
 ```python
 def subsets(nums):
-    res, path = [], []
+    res, path = [], []                         # nested function closes over res/path
     def go(i):
         if i == len(nums):
-            res.append(path.copy()); return
+            res.append(path.copy()); return    # GOTCHA: path.copy() — else all results alias same list
         go(i + 1)                              # exclude nums[i]
         path.append(nums[i])
         go(i + 1)                              # include nums[i]
-        path.pop()
+        path.pop()                             # undo include (exclude branch needed no undo — nothing appended)
     go(0)
     return res
 ```
@@ -81,12 +81,12 @@ Alternative "for each start index" shape for LC 78:
 def subsets_alt(nums):
     res = []
     def go(start, path):
-        res.append(path.copy())                # every node is a valid subset
+        res.append(path.copy())                # every node is a valid subset (record on ENTRY, not at leaves)
         for i in range(start, len(nums)):
             path.append(nums[i])
-            go(i + 1, path)
+            go(i + 1, path)                    # i+1 prevents revisiting — monotonic increasing indices
             path.pop()
-    go(0, [])
+    go(0, [])                                   # GOTCHA: `[]` literal here is safe — fresh list per call (not default arg)
     return res
 ```
 
@@ -95,15 +95,15 @@ def subsets_alt(nums):
 def permute(nums):
     n = len(nums)
     res, path = [], []
-    used = [False] * n
+    used = [False] * n                          # `[False]*n` safe (immutable); NOT `[[False]]*n` (shared!)
     def go():
         if len(path) == n:
             res.append(path.copy()); return
         for i in range(n):
-            if used[i]: continue
-            used[i] = True; path.append(nums[i])
+            if used[i]: continue                # skip already-chosen
+            used[i] = True; path.append(nums[i])        # choose (both updated together)
             go()
-            path.pop(); used[i] = False
+            path.pop(); used[i] = False          # undo (MUST undo both — every mutation paired)
     go()
     return res
 ```
@@ -115,11 +115,11 @@ def combinations(n, k):
     def go(start):
         if len(path) == k:
             res.append(path.copy()); return
-        for i in range(start, n + 1):
-            # Pruning: not enough elements left
-            if n - i + 1 < k - len(path): break
+        for i in range(start, n + 1):          # +1 because LC 77 uses 1..n inclusive
+            # Pruning: not enough elements left. n-i+1 = remaining count from i to n
+            if n - i + 1 < k - len(path): break   # `break` not `continue` — further i only makes it worse
             path.append(i)
-            go(i + 1)
+            go(i + 1)                           # i+1: strictly increasing to avoid duplicates
             path.pop()
     go(1)
     return res
@@ -128,15 +128,15 @@ def combinations(n, k):
 ### Template E — combination sum with reuse (LC 39)
 ```python
 def combination_sum(candidates, target):
-    candidates.sort()
+    candidates.sort()                           # GOTCHA: .sort() mutates in place — returns None
     res, path = [], []
     def go(start, remain):
         if remain == 0:
             res.append(path.copy()); return
         for i in range(start, len(candidates)):
-            if candidates[i] > remain: break    # pruning: sorted → all further too large
+            if candidates[i] > remain: break    # pruning: sorted → all further too large. `break` not `continue`
             path.append(candidates[i])
-            go(i, remain - candidates[i])       # reuse: pass `i`, not `i+1`
+            go(i, remain - candidates[i])       # reuse: pass `i`, not `i+1` (unbounded reuse semantics)
             path.pop()
     go(0, target)
     return res
@@ -145,12 +145,12 @@ def combination_sum(candidates, target):
 ### Template F — duplicates (sort + skip same-value siblings)
 ```python
 def subsets_with_dup(nums):
-    nums.sort()
+    nums.sort()                                 # sort groups duplicates adjacently — essential for dedup logic
     res, path = [], []
     def go(start):
         res.append(path.copy())
         for i in range(start, len(nums)):
-            if i > start and nums[i] == nums[i - 1]:    # skip duplicate at same level
+            if i > start and nums[i] == nums[i - 1]:    # GOTCHA: `i > start` (sibling-level), NOT `i > 0` (would skip across path)
                 continue
             path.append(nums[i])
             go(i + 1)
@@ -164,18 +164,18 @@ The condition `i > start` (not `i > 0`) is subtle: duplicates are skipped **betw
 ### Template G — board / grid placement (n-queens)
 ```python
 def solve_n_queens(n):
-    cols, diag1, diag2 = set(), set(), set()
+    cols, diag1, diag2 = set(), set(), set()   # GOTCHA: `set()` not `{}` (that's empty dict!)
     board, res = [], []
     def go(r):
         if r == n:
-            res.append(["." * c + "Q" + "." * (n - c - 1) for c in board])
+            res.append(["." * c + "Q" + "." * (n - c - 1) for c in board])   # str * int repeats
             return
         for c in range(n):
             if c in cols or (r - c) in diag1 or (r + c) in diag2:
-                continue                        # prune: conflict
+                continue                        # prune: conflict (O(1) set lookup — using list would be O(n))
             board.append(c); cols.add(c); diag1.add(r - c); diag2.add(r + c)
             go(r + 1)
-            board.pop(); cols.remove(c); diag1.remove(r - c); diag2.remove(r + c)
+            board.pop(); cols.remove(c); diag1.remove(r - c); diag2.remove(r + c)    # EVERY mutation needs a matching undo
     go(0)
     return res
 ```
@@ -185,15 +185,15 @@ def solve_n_queens(n):
 def exist(board, word):
     m, n = len(board), len(board[0])
     def dfs(r, c, k):
-        if k == len(word): return True
+        if k == len(word): return True          # matched all chars — success
         if not (0 <= r < m and 0 <= c < n) or board[r][c] != word[k]:
-            return False
-        ch, board[r][c] = board[r][c], '#'      # mark visited
+            return False                        # bounds/char check — short-circuits via `or`
+        ch, board[r][c] = board[r][c], '#'      # GOTCHA: save old char in `ch` AND mark '#' via tuple-assign (RHS evaluated first)
         found = (dfs(r+1,c,k+1) or dfs(r-1,c,k+1)
-              or dfs(r,c+1,k+1) or dfs(r,c-1,k+1))
-        board[r][c] = ch                        # restore
+              or dfs(r,c+1,k+1) or dfs(r,c-1,k+1))   # `or` short-circuits — stops on first True
+        board[r][c] = ch                        # restore (MUST happen even on True — else next search sees '#')
         return found
-    return any(dfs(r, c, 0) for r in range(m) for c in range(n))
+    return any(dfs(r, c, 0) for r in range(m) for c in range(n))   # `any()` short-circuits on first True
 ```
 
 Key mental tools:
@@ -238,20 +238,20 @@ Maintain three sets for `O(1)` conflict lookup:
 ### Step 2. Implement
 ```python
 def solveNQueens(n):
-    cols, diag1, diag2 = set(), set(), set()
+    cols, diag1, diag2 = set(), set(), set()   # three conflict sets: O(1) membership
     board = []                                  # board[r] = column chosen in row r
     res = []
     def go(r):
         if r == n:
-            res.append(["." * c + "Q" + "." * (n - c - 1) for c in board])
+            res.append(["." * c + "Q" + "." * (n - c - 1) for c in board])   # build row-strings via repetition
             return
         for c in range(n):
-            if c in cols or (r - c) in diag1 or (r + c) in diag2:
+            if c in cols or (r - c) in diag1 or (r + c) in diag2:   # prune: any conflict
                 continue
-            board.append(c)
+            board.append(c)                     # choose
             cols.add(c); diag1.add(r - c); diag2.add(r + c)
             go(r + 1)
-            board.pop()
+            board.pop()                         # undo (symmetric with choose above)
             cols.remove(c); diag1.remove(r - c); diag2.remove(r + c)
     go(0)
     return res

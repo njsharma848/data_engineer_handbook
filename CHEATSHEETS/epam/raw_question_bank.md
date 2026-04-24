@@ -973,3 +973,114 @@ return t_sum / n
 **Q6:** Remove the element which exceeds the threshold point
 - Input: `[1, 5, 6, 2, 9, 10]`, threshold = 5
 - Output: `[1, 5, 2]`
+
+---
+
+## Interview 26
+
+**Technology Areas:** Spark, Pyspark, SQL
+
+### Questions
+
+1. Project Discussion
+2. Why do we use spark?
+3. What are spark drivers and executers?
+4. How job get executed in spark?
+5. What are different optimization techniques in spark?
+6. How repartition and coalesce works?
+7. What is full join?
+8. Different types of joins.
+9. How can we add a new column which gives us a numbering from 1 to n rows in pyspark
+10. Any scenario where we use rank Window function and how it is different from row_number.
+11. What is "concat_ws" function
+12. What is the use of lit keyword?
+13. Why do we use `select(df["*"])`?
+14. How can you find duplicates in a dataset?
+15. `df.withColumn("col1", "val")`. Is it valid?
+16. Left anti join, cross join in sql
+17. Window functions
+18. What are indexes in sql, how do we decide which column to choose for index?
+19. Reasons for OOM error for driver
+20. How to debug a long running spark job
+21. Spark joins
+22. Difference between concat and concat_ws
+23. How data is stored in parquet file format and how it is faster and different from other formats?
+24. Decorators in python and it's usage example
+
+25. Query optimization:
+    ```
+    user = (
+        user.select("id", "name")
+        .join(address.select("id", "country"), "id", "left")
+        .filter(col("country") != "USA")
+    )
+    ```
+    What can be changed in this query to optimize it?
+
+26. How many stages will be created for the below query?
+    ```
+    df = (
+        df.select("appliance", "order_num")
+        .repartition(5)
+        .filter(col("order_num").isNotNull())
+        .join(order_df.select("appliance", "category", "sub_category"), "appliance")
+        .filter(col("sub_category") != "phone")
+        .groupBy("category")
+        .count(agg(collect_set("order_num")).alias("order_list"))
+    )
+    ```
+
+27. **Tables:**
+    - `orders_outletB` (1.4B rows): order_id (string), item (string), purchase_date (Date: yyyy-mm-dd), payment_mode (string), customer_id (string: cust-x)
+    - `item_df` (3M rows): item (string), cost (double), category (string: electronics, decoration, clothes, etc.), has_stopped_selling (boolean)
+    - `customer` (48M rows): id (string: cust-xxxxxxxxxx), gender (string: m/f/nb)
+
+    **Question:** Which item category has the highest purchase by "men" and "nb"?
+
+---
+
+## Interview 27
+
+**Technology Areas:** SQL, PYSPARK, PYTHON, AWS
+
+### SQL
+
+1. What is CTEs, subquery vs cte
+2. Window functions and why
+3. Rank and dense rank
+4. Tables / data bases
+5. Why partitioning is required & how
+6. Curser, triggers, UDFs
+7. Types of views
+
+### Python
+
+1. List comprehension
+2. Global variable
+3. Do you know methods, class, object etc
+4. Unit testing
+5. Classes, flow controls, errors handling, methods, variables, globals, good base class library knowledge such as collections, working with json
+
+### AWS
+
+1. Athena queries
+2. What is step functions
+3. Do you know cdk
+4. Glue crawlers, jobs, data catalog
+5. S3 lifecycle, partitioning in s3, s3 global naming
+6. Update partitions without using crawlers
+
+### Spark
+
+1. What is broadcast variable
+2. groupByKey, reduceByKey
+3. RDD, dataframe, dataset, df to RDD
+4. How do you create a view that is accessible globally
+5. Shuffling
+6. Pandas vs spark for distributed network
+
+### Others
+
+1. What is CICD? A little in detail about CI/CD flow and tools that you have used
+2. What is iceberg tables
+3. Docker

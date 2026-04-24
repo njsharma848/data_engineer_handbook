@@ -2204,3 +2204,313 @@ Output:
 12. Explain about data formats and which data format is suited and why?
 13. What do u know about Kafka and Spark streaming?
 14. Explain about delta live tables and advantages over regular parquet files?
+
+---
+
+## Interview 60
+
+**Technology Areas:** Databricks RAG, ML, Python, SQL
+
+### Questions
+
+1. Explain about your previous project.
+2. Technology and Tools used in Previous Project.
+3. Do you have any relevant experience in GenAI/LLM?
+4. How to Evaluate the Quality & Performance of RAG Model?
+5. How to Evaluate the Accuracy of RAG Model?
+6. Work experience with Traditional Machine Learning Models?
+7. What metrics have you used in identifying whether the model is good or not?
+8. What kinds of tasks you done in Data Engineering? Data Preparation, ETL etc?
+9. What CI/CD tool did you use in your data engineering project?
+10. How do you deploy code in Azure DevOps? What is the process of Deployment and Integration in Azure DevOps?
+11. Are you aware of PostgreSQL. Have you worked on it?
+
+---
+
+## Interview 61
+
+**Technology Areas:** Databricks, SQL, Spark
+
+### Internal Interview
+
+1. Discussion on previous projects and skills/technologies worked upon.
+
+2. How can we create workflows on Databricks and integrate the Notebook?
+
+3. What will be the INNER, LEFT and FULL OUTER JOIN output for below table.
+
+    Table A:
+
+    | id   |
+    |------|
+    | 1    |
+    | 1    |
+    | 1    |
+    | null |
+
+    Table B:
+
+    | id   |
+    |------|
+    | 1    |
+    | 1    |
+    | 1    |
+    | 1    |
+    | null |
+
+4. What is SCD2? How can we implement this in PySpark?
+
+5. What are the Spark Optimization techniques that you have implemented in the past project?
+
+6. **Scenario:** Two Different Data Engineers are querying the same table at their end. But 1 person gets the output while other is not getting any output. Also, there is no any error appearing for the same. What could be the possible reason for the same? (Both Data Engineers are having same level of access)
+
+---
+
+## Interview 62
+
+### Questions
+
+1. Write a program (programming language is of your choice) to find out the set of arrays that can give a sum zero up on adding the individual elements
+    Input array: [-3, -2, -1, 0, 1, 2, 3]
+
+2. We have source data that will generate json records for every 30 seconds, these records need to be pushed to live dashboards into website and also to the BI dashboards. If you were to implement such use case, mention the best technologies and tools to be used at each stage and why a specific tool or framework is better compared to others in the market.
+
+3. Which DB is better in case of future schema changes? (expectation is: RDBMS or NoSQL DB like Mongo DB)
+
+4. Why Kafka is a better choice in pulling the data for above use case compared to some rest api calls for every 30 seconds?
+
+5. Is it a good practice to place config files in DBFS (DBFS paths are accessible to all, anyone can change them, but workspaces have been introduced in DBFS to bring in security aspects to config files).
+
+6. Do u choose snowflake (comes with a cost) or unity catalog tables from databricks for data governance aspects?
+
+7. Does unity catalog in databricks provide regional level security like a person from US can view a table and a person in India should not be able to read it?
+
+8. How do you deploy code? (Should know what jenkins actually do after fetching your code from git repo)
+
+9. Which data format is good for data processing and storing and why? (Ex: parquet and it provides columnar format etc..)
+    1. What do u mean by columnar format?
+    2. How does columnar format provide optimization during query aggregations?
+
+10. Let's say a dashboard refresh in PowerBI is running slow, what is your approach to address this issue?
+
+---
+
+## Interview 63
+
+**Technology Areas:** PySpark, Snowflake, Databricks, Python, ...
+
+### Questions related to previous project
+
+- Project discussion.
+- Architecture and data flow in previous project.
+- What are some optimization techniques used by you in your previous project?
+
+### Snowflake
+
+- Basic architecture of Snowflake.
+- Cluster Keys in snowflake.
+- How to migrate data from On Prem systems to Snowflake.
+- Partitioning in Snowflake.
+- View and Materialized view in Snowflake.
+- How Snowflake is better from traditional RDBMS?
+- Follow up question: How is Snowflake fault tolerant and more secure as compared to traditional RDBMS?
+- What are some snowflake based optimization techniques?
+- Snowflake Time travel feature.
+
+### Databricks
+
+- Notebooks Vs Jobs
+- Auto loader
+- Delta live table
+
+### Spark
+
+- Spark Optimization techniques.
+- Parquet Vs ORC Vs Avro.
+- Logical Plan Vs Physical Plan and where catalyst optimizer comes into picture?
+- Your job has 20 partitions. You notice that 19 tasks have succeeded successfully but 1 task is still running. What could be the possible reason?
+- Follow up question: How do you resolve data skewness issue in your code?
+- RDD Vs DF VS DS. Which one is more optimized and when to use which data structure?
+
+### Python
+
+- How is Scala different from Python?
+- 2-3 basic questions on Set, List, Tuples.
+- Decorators in Python and what is its use?
+
+### AirFlow
+
+- XComs in Airflow
+- What are dynamic DAGs?
+
+---
+
+## Interview 64
+
+**Technology Areas:** MLOps
+
+### Questions
+
+Introduce and tell us about past projects.
+
+1. What is meant by ML Operations and Why do we need MLOps?
+2. How many and what kind of pipelines were developed in the project?
+3. How many models were shifted into production? What kind of models were used?
+4. What are the Key challenges while moving data models to production?
+5. Summarization of different model metrics captured in production?
+6. What are the roles of the Data Scientist vs ML Ops Engineer?
+7. What are the different kinds of Python libraries used in MLOps?
+8. What is model analysis? How is it done?
+9. How is model versioning done? What is the process to update the models in production?
+10. What needs to be done if the deployed model in not performing as expected in production?
+11. How is model monitoring done? What is different types of model monitoring?
+12. What are the strategies we need to follow to mitigate the global impact when deploying new models?
+
+---
+
+## Interview 65
+
+**Position Role:** A4
+**Technology Areas:** Python, Pyspark, DataBricks, SQL
+
+### Questions
+
+1. Self introduction and previous project
+2. Share the critical issue which you resolve in your previous project
+3. How Spark execution takes place once we submit a job
+4. What is deduplication (along with Syntax).
+5. How to identify unique records in SQL
+6. Different ways of creating an RDD
+7. What is dataframe
+8. What is data spill, how can we handle this issue
+9. What is repartition and advantages
+10. What is coalesce and advantages
+11. What are narrrow and wide transformations
+12. How can spark identifies whether it's a narrow or wide transformations
+13. What is row_number, dense_Rank
+14. How Delta tables works
+15. How data stores in Delta tables
+16. What is Data skewness, how to resolve
+17. How to identify the reason behind the slowness of a spark job
+18. What is merge into statement syntax
+19. Provide spark memory management syntax
+20. What is Star and Snowflake schemas, when to use each model
+21. What is slowly changing dimensions, how to implement using spark
+22. What is CDC (change data capture), how to implement using spark
+23. Difference between parquet and avro file formats
+24. When multiple parallel transactions are trying to update a same table then how Delta table stores data
+25. **2 coding questions: 1 on Python and 1 on Dataframe**
+
+    **Python:**
+
+    Find number of recipes we can prepare with the below data:
+
+    ```python
+    recipes = {
+        "Pancakes": ["flour", "eggs", "milk", "butter"],
+        "Omelette": ["eggs", "milk", "cheese", "spinach"],
+        "Smoothie": ["banana", "milk", "honey", "berries"],
+        "Salad": ["spinach", "nuts", "berries", "cheese"]
+    }
+
+    Ingredients = {"milk":20, "egg":10, "butter":2}
+    ```
+
+    **DataFrame:**
+
+    Identify the total sum of a production by item
+
+    ```python
+    data = [
+        (1, "apple", 15, 10),
+        (2, "banana", 30, 20),
+        (3, "orange", 10, 30),
+        (2, "banana", 30, 40)
+    ]
+
+    schema = [{"product_id", "item", "quantity", "price"}]
+    ```
+
+---
+
+## Interview 66
+
+**Position Role:** A3
+**Technology Areas:** Spark, Java, Python, Databricks, API, SQL
+
+### Final client interview
+
+1. Tell me about yourself
+2. Do u have any Java experience earlier?
+    a. Which version of Java have you used?
+    b. Have you used streams in Java and in what cases?
+3. Which libraries have you used in python?
+4. Do you have UI experience and also any SQL database experience?
+5. SQL: difference between rank and dense rank
+6. SQL: How do you eliminate duplicates in a SQL query
+7. SQL: difference between UNION and UNION ALL
+8. Have you worked with REST APIs?
+9. Have you worked with databricks and also dashboards in databricks?
+
+---
+
+## Interview 67
+
+**Position Role:** A3
+**Technology Areas:** Power BI
+
+### PI Interview
+
+1. Tell me about yourself
+2. Explain about your role in previous project
+3. Challenging task you have accomplished in previous project
+4. Have you handled a client in your previous project
+5. What is a incremental refresh
+6. What are dataflows
+7. How to mask column in power bi
+8. Latest updates in power bi features
+
+---
+
+## Interview 68
+
+**Position Role:** A3
+**Technology Areas:** Spark, Scala, Java, Airflow
+
+### Questions
+
+1. Brief about previous projects and experience
+2. Project related question
+    a. Transformation that I did.
+    b. Problems/error that I faced
+    c. Spark optimization that I did in the previous project
+3. Any experience in api development using java or any knowledge on same?
+4. Any experience with working on Amazon S3.
+5. Any experience in streaming.
+6. Airflow
+    a. How it was getting utilize in my previous project.
+7. Reverse the words in the string → "Hello! welcome to scala!!"
+8. Reverse the words of a string without changing the position of punctuation [(, . : !)]
+    a. Input → "Hello! welcome to scala!!"
+    b. Output → "scala! to welcome Hello!!"
+9. Find the first index of two element of array for which the sum is 10 → [1, 4, 2, 5, 6, 8, 9]
+
+---
+
+## Interview 69
+
+**Position Role:** A3-A4
+**Technology Areas:** PySpark, Python, DataBricks, SQL
+
+### Questions
+
+1. Explain about your Project
+2. Project Data volumes
+3. Different joins in Pyspark
+4. Cache Vs Persist
+5. Stages in Sort Merge Join
+6. Narrow and Wide transformations
+6. Rrepartition and coalsec
+7. Difference between drop ducpliactes and distinct.
+8. SQL Optimization
+9. Types of Indexes and their Usgae

@@ -1,0 +1,787 @@
+Spark Optimization Session - 1
+=========================
+
+Spark Performance Optimizations / Tuning Spark Jobs
+===========================================
+
+There are basically 2 main areas we should focus on
+
+1. Cluster configuration level - resource level optimization
+
+2. Application code level - how we write the code.
+
+Partitioning, bucketing, cache & persist, avoid/minimize shuffling of data, join optimizations,
+using optimized file formats, using reduceByKey instead of groupByKey
+
+Spark Optimization Session - 2
+=========================
+
+resources - memory (RAM), CPU cores (Compute)
+
+Our intention is to ensure our spark job gets the right amount of resources.
+
+Consider we have machine having following specifications.
+10 Node cluster (10 worker nodes)
+while each machine holding
+16 cpu cores
+64 GB RAM
+
+Now there is a Executor (it is like a container of resources which contains cpu cores and Ram)
+
+executor/container/JVM = cpu cores + memory(ram)
+
+single worker node can hold more than one executor means multiple executors (multiple containers)
+
+Now,how many containers one executor can hold?
+=========================================
+16 cores , 64 gb ram
+
+there are 2 strategies when creating containers.
+
+1. Thin executor - intention is to create more executors with each executor holding minimum possible resources.
+==============
+
+total of 16 executors in each machine, with each executor holding
+
+each executor - 1 core, 4 gb ram
+divided the ram by 16 cores
+while 1 core will be always alloted for the background processes.
+
+Drawbacks
+=========
+1. In this scenario we will be losing the benefits of multithreading.
+   Multithreading means multiple tasks running on single executor, which wont be possible beacuse we have only one cpu core in each executor.
+2. A lot of copies of broadcast variable are required. each executor should receive its own copy.
+   so,if there are 160 executors 160 copies will be required that is the pain point. 
+
+so thin executor approach is not good.
+
+2. Fat executor - intention is to give maximum resources to each executor.
+=============
+
+16 cores, 64 gb ram
+
+you can create a executor which can hold 16 cpu cores and 64 gb ram.
+
+so only one executor is holding all the power in each machine.
+
+Drawbacks
+=========
+1. It is obverved that if the executor holds more than 5 cpu cores then the hdfs throughput suffers.
+2. If the executor holds very huge amount of memory, then the garbage collection takes a lot of time.
+    garbage collection means removing unused objects from memory. 
+
+thats why fat approach is also not good.
+
+
+Spark Optimization Session - 3
+=========================
+
+so, we should go with the balanced approach.
+======================================
+Consider a machine having 
+10 Nodes and
+16 cores , 64 GB Ram in each node.
+
+1 core in each machine is given for other background activities.
+1 gb RAM in each machine is given for operating system.
+
+in each node/machine we are now left with 15 cores, 63 GB Ram
+
+so our conditions are
+==================
+
+=> we want multithreading within a executor (> 1 cpu core per executor is required)
+=> we do not want our hdfs throughput to suffer (it suffers when we use more that 5 cores per executor)
+
+so 5 is the right choice of number of cpu cores in each executor.
+
+so our machine specifications are 
+===========================
+
+10 Nodes and
+15 cores , 63 GB Ram in each node.
+
+so we can have 3 executors running on each worker node
+
+each executor will contain 5 cpu cores and 21 GB Ram.
+
+out of this 21 GB RAM some of it will go as part of overhead (off heap memory)
+
+OFF HEAP MEMORY = memory which is raw which is not part of JVM.
+
+ao how much memory goes as off heap memory
+
+off heap memory = Max of (384 mb or 7% of executor memory)
+
+so in our case memory is 21 gb so 7% = 1.5 gb
+= 1.5 GB (overhead / off heap memory) - this is not part of containers.
+
+so 21-1.5 = 19 gb (this is now remaining memory)
+
+So, we have 10 Node Cluster/ 10 worker nodes
+
+10 * 3 = 30 (executors across the cluster)
+
+30 executors with each executor holding = 5 cpu cores, 19 GB RAM
+
+1 executor out of these 30 will be given for YARN Application Manager
+30 - 1 = 29 executors
+
+so how many tasks can run within a executor?
+=====================================
+It is equal to number of cores in executor
+
+The memory within the executor is known as on heap memory.
+The memory outside of the executor is known as on heap memory.
+
+so how does off heap memory helps?
+===============================
+as you know garbage collection takes time to clean the objects that are created, so if we store something in off heap memory.
+so we save that time. 
+This is raw memory for optimization purposes.
+But managing off heap memory is bit challenging bcz it is managed by program.
+And on heap memory is fully managed by jvm so we don't have to worry about that.
+
+
+Spark Optimization Session - 4
+=========================
+
+Practical example/production cluster - labs.itversity.com
+
+5 worker nodes while each node holding 8 cpu cores , 32 GB RAM
+
+out of 32 GB usable is 24 GB for yarn containers 8gb is used for some other purposes.
+
+Min executor size = 1 gb
+Max executor size = 4 gb
+
+so, executor/container - should have memory in between 1 & 4 gb.
+
+in each worker node there are 8 physical cpu cores means we get 16 VCPU's
+This is no is 2 in this case means if you have cores means 16 vcpu's.
+Admin will decide this number.
+
+out of 16 we can use 12 vcpu's used for yarn containers  and 4 vcups used for some other purposes.
+
+Now we are left with 24 GB RAM , 12 VCPU's on each worker node and we have 5 such worker nodes.
+
+Conditions are
+============
+
+executor memory - 1 to 4 GB
+executor cores - 1 or 2 VCPU's
+
+so, how much maximum executors you can create in entire cluster?
+======================================================
+
+12 executors in each worker node
+
+12 * 5 = 60 executors/containers
+
+60 executors with each holding 1 cpu cores 2 GB Ram
+
+so, how much minimum executors you can create in entire cluster?
+======================================================
+
+30 executors with each holding 2 cpu cores 4 GB Ram
+
+
+So Total Cluster holds
+==================
+
+5 worker nodes
+24 GB usable Ram
+12 VCPU's
+
+in our resource pool which YARN is managing we have 120 GB RAM and 60 CPU Cores.
+
+24 * 5 = 120 GB RAM
+12 * 5 = 60 cpu cores
+
+Spark Optimization Session - 5
+=========================
+
+bigLogNew.txt - 1.46 GB
+
+I want to move this file to my edge node in the cluster..
+
+5 Datanodes and 1 edgenode which is alloted to us and we have access to that.
+
+step 1: move this file bigLogNew.txt to the edge node.
+step 2: move this file bigLogNew.txt from edge node to the hdfs using put command.
+step 3: we will be doing some operations
+
+step 1
+=====
+to transfer file from my local to a external server (edge node) use below command in command prompt:
+scp (secure copy)
+
+scp Desktop/bigLogNew.txt.zip bigdatabysumit@gw02.itversity.com:/home/bigdatabysumit
+
+scp <local_file_path> <username@hostname:<path in server>>
+
+ls -ltrh = Human readable file size
+
+unzip.<file_name> = To unzip any file in server
+
+If you have a file of 1.5 gb and you want to play with very big data then what you can do is
+you can open the file 3 times and append all of the data of these three files into one new file by using following command.
+cat <file_name> <file_name> <file_name> >> <new_file_name>
+
+step 2
+=====
+
+Now this file is present in local and you want to put it in hdfs.
+
+hadoop fs -put bigLogLatest.txt .
+. = this . means file will be copied into home directory.
+
+step 3
+=====
+spark-shell = will open spark version1
+spark2-shell = will open spark version2
+
+we are operating in local mode thats why the executor and driver are same.
+
+1 container is allocated which is on local machine.
+There is only 1 executor which is holding all 16 cores.
+But it is not a prefereed choice.
+In this case master = local[*]
+by default when you give spark-shell it uses local as master.
+
+But when we want to use it in distrubuted mode we need to select master = yarn.
+command = spark-shell --master yarn
+
+in yarn mode we can see 1 driver & 2 executors
+
+There are 2 ways to allocate the resources
+==================================
+1. Allocating the resources manually - In this mode we need to tell the system how much driver,executors to use
+2. Dynamic resource allocation - In this system will automatically allocate the resources.
+
+You can see it in properties that which resource is used.
+It will automatically set the following parameters.
+
+initial executors - 2 (Initially 2 executors will be used)
+max executors - 10 (If load is increased cluster can you use more executors)
+min executors - 0
+executorIdleTimeout - 120 seconds (that means if executor is ideal for 2 mins it will stopped/or it will be given back to resource manager)
+
+Now how much resouces this executors hold
+====================================
+
+executor - cpu + memory
+
+each executor by default will get 1 cpu core and 1 gb RAM based on the default configurations of this cluster.
+
+whenever we allocate memory to the container
+
+300 mb out of that goes for some overheads 
+1024 - 300 = 724 mb
+
+1. storage & execution memory = 724 * 0.6 = 434.4
+2. additional buffer memory for other purpose=- 724 * 0.4 = 289.6
+
+Spark Optimization Session - 6
+=========================
+
+our big file is in hdfs and we will be processing that
+we will go with dynamic resource allocation
+
+bigLogLatest.txt (8.2 gb file)
+
+ERROR: Thu Jun 04 10:37:51 BST 2015
+WARN: Sun Nov 06 10:37:51 GMT 2016
+WARN: Mon Aug 29 10:37:51 BST 2016
+ERROR: Thu Dec 10 10:37:51 GMT 2015
+ERROR: Fri Dec 26 10:37:51 GMT 2014
+ERROR: Thu Feb 02 10:37:51 GMT 2017
+WARN: Fri Oct 17 10:37:51 BST 2014
+ERROR: Wed Jul 01 10:37:51 BST 2015
+WARN: Thu Jul 27 10:37:51 BST 2017
+
+Code
+====
+
+spark2-shell --master yarn
+val rdd1 = sc.textFile("bigLogLatest.txt")
+val rdd2 = rdd1.map(x => (x.split(":")(0), x.split(":")(1)))
+val rdd3 = rdd2.groupByKey
+val rdd4 = rdd3.map(x => (x._1, x._2.size))
+rdd4.collect
+
+since we have called one action we can see one job in spark UI
+
+we can see 2 stages because we have one wide transformation.
+
+Tasks - 132
+
+total blocks in hdfs are 66
+
+we have 2 stages each with 66 tasks each
+
+we have 66 partitions in our rdd thats why 66 tasks are created per stage.
+
+default block size is 128mb (8.2gb/128mb) = 66 blocks
+
+This has used max of 10 executors to perform the operation and after completing the task the executors became dead.
+means it is dynamic alllocation.It will use it when needed and release when work is done. 
+
+
+Spark Optimization Session - 7
+=========================
+
+Continuation of the problem in session 6
+
+Tasks - 132
+2 stages..
+rdd has 66 paritions because our hdfs file has 66 blocks..
+
+example
+=======
+lets consider a system have 66 executors and we can have at the max 10 executors..
+
+10 executors have to execute 66 tasks
+
+some of the executors might have to execute multiple tasks one after the other.
+
+if in executor there is 1 cpu core - then only one task can be performed at a time
+
+number of executors * number of cpu cores each executor hold
+10 * 1 = 10
+10 tasks can be executed at the same time.
+
+if in a executor there are 4 cpu cores - then this executor can parallely run 4 tasks at a time.
+10 * 4 = 40
+40 tasks can be executed at the same time.
+
+In stage 1 
+========
+we have 66 tasks and each task did the same amount of work.
+each of the partiton was have equal amount of data.
+So each task/block worked on 128 mb data each.
+
+in stage 2
+========
+after we used groupByKey shuffling happened..
+
+after shuffling we will get maximum 2 full partitions
+ERROR
+WARN
+same key will go to same partition.
+
+so we have total of 8.5 gb file
+hypothetically,
+4.25 gb ERROR
+4.25 gb WARN
+but this may also happen that only 1 gb records are of ERROR and 7.5 gb of WARN.
+
+one of the partition will definitely get 4.25 gb or more.
+
+66 new patitions which will be created in stage
+66 partitions = 66 tasks
+
+only 2 of them will hold data beacuse we have only 2 full partition rest all of them will be empty.
+
+entire data will be executed in just 2 tasks remaining 64 tasks wont do anything.
+
+1 Executor have = 1 cpu core and 1 gb RAM - 400 mb only.
+
+4.25 gb data will go to one partition
+
+one executor should handle one partition executor can handle only 400 mb bcz storage & execution memory is 400 mb.
+but you want this executor to handle atleast 4.25 gb 
+So this will give out of memory error or executorlostFailure.
+one executor cannot handle such a huge amount of data.
+
+solution
+=======
+
+salting.
+
+warn1
+warn2
+warn3
+warn10
+
+error1
+error2
+error3
+error10
+
+20 distinct keys..
+
+20 filled partitions.. - 20 executors...
+
+8 gb..
+8 gb / 20
+400 mb
+
+Spark Optimization Session - 8
+=========================
+
+1. Dynamic resource allocation
+=========================
+
+initial executors - 2
+max executors - 10
+min executors - 0
+executorIdleTimeout - 120 seconds
+
+When should you prefer Dynamic resource allocation?
+===========================================
+Dynamic resource allocation can be really helpful with long running jobs.
+
+for e.g
+You have 10 stages
+
+In stage1 - 100 tasks
+In stage2 - 20 tasks
+In stage3 - 10 tasks
+In stage4 - 10 tasks  
+In stage5 - 10 tasks
+In stage6 - 10 tasks
+In stage7 - 10 tasks
+
+so,when you have long running jobs like multiple stages where you don't know sometimes more resources will be required and sometimes
+min resources are required then you should go with dynamic resource allocation.
+
+But in this case if you go through static resource allocation and if you would have taken 50 containers/executors.
+Then these executors will be blocked even if in some stages resources will not be required.
+
+
+2. Static resource allocation
+=======================
+
+by default DRA is set to true you need to make it false.
+
+spark2-shell 
+--conf spark.dynamicAllocation.enabled=false
+ --master yarn 
+--num-executors 20
+--executor-cores 2 
+--executor-memory 2G
+
+In the Environment tab you can check all of these properties.
+
+In this case 20 executors will be blocked even if you don't execute anything.
+so this is not a proper utilization of resources.
+
+In itversity when you request for lets say 4G then it request for 4G + 400 mb(10% of asked memory)
+so if limit is 4gb then you can max ask for 3.5G bcz then it will request for 3.5+ 350 mb which is below 4gb.
+
+
+Spark Optimization Session - 9
+=========================
+
+Dynamic Allocation
+================
+
+spark2-shell --master yarn --num-executors 5 --executor-cores 2 --executor-memory 2G
+
+In this case dynamic allocation is true and in this case it will start with 5 executors.
+
+initial executors - 5
+max executors - 10
+min executors - 0
+executorIdleTimeout - 120 seconds
+executor-cores 2
+executor-memory 2G
+
+spark2-shell --master yarn
+val rdd1 = sc.textFile("bigLogLatest.txt")
+val rdd2 = rdd1.map(x => (x.split(":")(0), x.split(":")(1)))
+val rdd3 = rdd2.groupByKey
+val rdd4 = rdd3.map(x => (x._1, x._2.size))
+rdd4.collect
+
+If we run this code then in stage1 it will use all of the executors present.
+but in stage2 there are only 2 tasks so only 2 executors will be required
+so other executors will get released as there is no need of them.
+
+Data
+====
+ERROR: Thu Jun 04 10:37:51 BST 2015
+WARN: Sun Nov 06 10:37:51 GMT 2016
+WARN: Mon Aug 29 10:37:51 BST 2016
+ERROR: Thu Dec 10 10:37:51 GMT 2015
+ERROR: Fri Dec 26 10:37:51 GMT 2014
+ERROR: Thu Feb 02 10:37:51 GMT 2017
+WARN: Fri Oct 17 10:37:51 BST 2014
+ERROR: Wed Jul 01 10:37:51 BST 2015
+WARN: Thu Jul 27 10:37:51 BST 2017
+
+8.5 GB file
+66 blocks in hdfs
+our base rdd has 66 partitions.
+
+stage 1 all the executors will work
+
+but after applying groupByKey we have a rdd with 66 partitions but only 2 were having data rest 64 were empty.
+
+2 partitions have to hold 8.5 gb in total.
+
+and our cluster limitation is that we can use maximum of 4GB ram and
+even if in our cluster lets suppose had 8gb ram then also it would have used two executors only
+what will other executors will do and it will also affect parallelism.
+
+Solution
+=======
+
+Is there a way we can generate a random number between some range lets say (1 to 60) after the word ERROR and WARN.
+
+output we want
+=============
+ERROR1
+ERROR7
+ERROR40
+ERROR6
+
+WARN1
+WARN2
+WARN3
+WARN40
+
+after groupbykey
+==============
+ERROR1,3
+ERROR7,5
+ERROR40,8
+
+WARN1,10
+WARN2,50
+WARN3,60
+
+so that we will get 60 keys as per our code.
+
+after this what we want is
+======================
+ERROR,3
+ERROR,5
+ERROR,8
+
+WARN,10
+WARN,50
+WARN,60
+
+after this reduceByKey and we will get final answer
+==========================================
+
+ERROR,1000
+WAR,1500
+
+Code
+====
+
+val random = new scala.util.Random
+val start = 1
+val end = 60
+
+val rdd1 = sc.textFile("bigLogLatest.txt")
+
+val rdd2 = rdd1.map(x => {
+var num = start + random.nextInt( (end - start) + 1 )
+(x.split(":")(0) + num,x.split(":")(1))
+})
+
+val rdd3 = rdd2.groupByKey
+
+val rdd4 = rdd3.map(x => (x._1 , x._2.size))
+
+rdd4.cache
+val rdd5 = rdd4.map(x => {
+if(x._1.substring(0,4)=="WARN")
+("WARN",x._2)
+else
+("ERROR",x._2)
+})
+val rdd6 = rdd5.reduceByKey(_+_)
+rdd6.collect.foreach(println)
+
+No.of tasks which can run in parallel = No.of Executors * No.of cores
+
+more the number of tasks run in parallel faster will be the job completion.
+More the resources lesser the time required to complete the job.
+
+In the first case
+=============
+8 gb file
+if we give 4 gb to a container
+it will lead to out of memory error.
+
+In this case 2 executors are working and even if increase the no. of executors it won't matter bcz keys are only2
+so tasks are2 so executors are2
+
+so solve this issue
+
+in second case
+=============
+
+we used salting and added a random number between a particular range.. this is to ensure we get more unique keys..
+120 keys we got (60 for WARN and 60 for ERROR)
+8.5 gb data in 120 keys.
+8000 mb / 120 keys = approx. 65mb
+
+now if we have 66 partitions in stage1 we will have 66 partitions in stage2 after groupByKey 66 partitions
+and even in this if we increased the resources we will get more optimization.
+
+Spark Optimization Session - 10
+==========================
+Execution and Storage memory
+=========================
+
+Memory usage in spark falls under two broad categories.
+
+1. Execution memory - memory required for computations in shuffle, join, sorts, aggregations.
+2. Storage memory - storage for cache,Broadcast,Accumulator.
+
+In spark Execution memory and storage memory share a common region.
+for example 2GB may be directly given as combination to both of them
+
+Advantage of that is
+=================
+When no execution is happening then your storage can aquire all the available memory and vice versa.
+lets say there is no execution happening then storage can take all 2GB.
+and when there is no need of storage then execution can take all 2GB.
+
+There is a key thing
+================
+Execution may evict storage if necessary.
+==================================
+Lets say there is a 2 gb common unified region and suppose all of 2 gb is used for storage.
+Now if some execution/computations are coming they cannot evict the entire 2 gb.
+but this eviction can happen until total storage memory usage falls unser a certain threshold.
+There is a certain threshold beyond which the execution cannot evict the storage,there is a threshold for that.
+system needs to keep some memory fixed for storage.
+
+but storage can not evict execution.
+=============================
+lets say there is execution going on and some storage came then it cannot stop the ongoing operation so
+it is not possible.
+ 
+This design ensures several desirable properties:
+1. application which do not use caching can use entire space for execution.
+2. applications that do not use caching can reserve a minimum storage space.
+this makes your data blocks immune from being evicted.
+
+if you request a container/executor of 4 GB size..
+then you are actually requesting
+
+4 GB (heap memory)
++
+max (384 mb, 10% of 4 GB) (off heap memory) - overhead
+
+4096 mb (java heap)
++
+384 mb (off heap) - VM overheads,interned strings,other native overheads.
+
+so lets talk about 4GB(heap memory)
+
+300 mb is reserved,(storage for running executors)
+so, now we are left with 3.7GB
+
+out of this 3.7 GB 60 % of it goes to the unified (storage + execution memory)
+2.3 GB is for unified region (storage + execution)
+
+out of 2.3 GB 50% is the threshold for storage memory..
+this means we can cache data upto 1.15 GB roughly without worrying about eviction by executions/computations.
+
+remaining 40% of 3.7 GB goes to user memory i.e 1.4 GB
+(to hold user datastructures, storing spark related metadata and safeguarding OOM errors)
+
+
+Spark Optimization Session - 11
+==========================
+
+In disk data is serialized and in memory it is deserialized
+
+When you cache or persist a rdd it will hold the data in part of storage and execution memory(on-heap memory)
+
+unpersist()
+
+When you want to use persist with various storage level
+==============================================
+Import the following library.
+ 
+import.org.apache.spark.storage.StorageLevel
+
+rdd4.persist(StorageLevel.DISK_ONLY)
+
+now it will stored in disk.
+
+key concept
+==========
+
+The size of file was 8.2 gb on disk (serialized form it is 8.2 gb)
+
+when we willl cache this it will get stored in memory.
+for e.g 
+rdd1.cache()
+
+When we talk about memory data is kept in deserialized form
+that 8.2 gb got will get converted into 20 gb in deserialized form in memory.
+and if size of memory is 10 gb only then it will able to hold only 10 gb of data
+only 10 gb worth partitions will get cached.
+
+Now in disk data is stored in serialized form means it will take same amount of storage when we 
+rdd1.persist(StorageLevel.DISK_ONLY)
+
+rdd1.persist(StorageLevel.MEMORY_ONLY_SER)
+
+SERIALIZED MEANS IN BYTES FORM - AND IT TAKES A BIT OF TIME BECAUSE IT HAS TO BE DESERIALIZED.
+
+DESERIALIZED IS FAST BUT TAKES MORE SPACE.
+
+In terms of serializer
+=================
+we should prefer kryo serializer over java serializer.
+
+whenever the data is stored on disk or has to be transferred over the disk it has to be in serialized form.
+
+if we use kryo serializer then size will be much lesser than in the case of java serializer.
+
+kryo is significantly faster and more compact than java serialization (often as much as 10 times)
+
+
+PYSPARK
+=======
+
+pyspark --master yarn
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

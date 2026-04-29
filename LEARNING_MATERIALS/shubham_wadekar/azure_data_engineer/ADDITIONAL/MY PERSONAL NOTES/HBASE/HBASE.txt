@@ -1,0 +1,539 @@
+HBASE
+======
+
+Semi colon is not needed incase of hbase.
+hbase is Case Sensitive.
+
+Connect to Hbase = hbase shell
+
+List of tables = list
+
+To see status of all services (Run it from terminal)
+========================================
+
+sudo service --status-all
+(Run this on terminal)
+These two services should be running
+
+1. HBase master g                      
+2. hbase-regionserver
+
+Run this commands to make these services on
+
+sudo service hbase-master restart
+sudo service hbase-regionserver restart
+
+Create a table
+============
+
+create 'students','personal_details','contact_details','marks'
+
+students = table name
+personal_details,contact_details,marks = Column families
+
+Inserting a records
+================
+
+put 'students','student1','personal_details:name','shubham'
+put 'students','student1','personal_details:email','shubham@gmail.com'
+
+students = table name
+student1 = Row Key
+personal_details:name = Column families:Column
+shubham = Value
+
+When we were using hive it used to take lot of time to insert it used to invoke mapreduce job.
+But in hbase it is inserting the records in few seconds.
+
+To see the complete content of table
+==============================
+
+scan 'students'
+
+scan will give a range of rows or all the rows.
+ 
+To get specific row
+===============
+
+get 'students', 'student1'
+get'tablename','rowkey'
+
+To get info about specific Column Family.
+==================================
+
+get 'students', 'student1',  { COLUMN => 'personal_details' }
+
+To get info about specific Column
+===========================
+
+get 'students', 'student1',  { COLUMN => 'personal_details:name' }
+
+Delete Column
+============
+
+delete 'students', 'student1', 'personal_details:email' 
+
+Describe a table
+=============
+
+describe 'students'
+
+Check if table exists or not
+=====================
+
+exists 'students'
+
+Drop a table
+==========
+
+drop 'students'
+
+To drop a table we need to disable it first.
+The data is present in memstore for now and flush has not happened means hfile is not created.
+When we disable the table the content of memstore is flushed to the disk and then we can drop the table.
+We can only delete the table when the data of it is avilable in hdfs.
+
+disable 'students'
+
+create 'cencus','personal','professional'
+
+Insert the data.
+
+scan 'census' (gives a range or records)
+
+scan 'census', (COLUMNS => ['personal: name']} (to get name column from all records in a table)
+
+scan 'census', {COLUMNS> ['personal:name'], LIMIT => 1}
+
+scan 'census', (COLUMNS => ['personal: name'], LIMIT=> 1, STARTROW => "2"}
+
+scan 'census', (COLUMNS => ['personal:name'], LIMIT => 3, STARTROW => "2"} 
+
+scan 'census', (COLUMNS => ['personal:name'], STARTROW => "2", STOPROW => "3"}
+
+startrow is included however stoprow is excluded.
+
+STARTROW => "2", STOPROW => "3" --> It is used to mention range of records.
+
+delete 'census', 1, 'personal: marital_status'
+
+exists 'census'
+
+drop 'census'
+
+disable 'census' (removes the index from memory and flushes the recent changes to disk)
+
+Location of hbase table
+====================
+
+seperate directory is created for each column family.
+
+hadoop fs -ls /hbase/data/default/cencus/c34d2f1ec34b02a9e19890a7fe202cfc/personal
+
+hadoop fs -ls /hbase/data/default/cencus/c34d2f1ec34b02a9e19890a7fe202cfc/professional
+
+For now we cannot see what is inside the column families.Bcz data is not yet flushed to the disk.
+
+We can try that by using disable table option.
+
+Disable flushes the in memory changes to the disk.
+
+
+Get data based on a filter condition
+=============================
+
+In HBase, fetching data based on a filtering condition is achieved using filters.
+
+These filters are like Java methods which take two input parameters a logical operator and a comparator. 
+
+The logical operator specifies the type of the test, i.e., equals, less than, etc. 
+
+The comparator is the number/value against which you wish to compare your record.
+
+Some commonly used filter functions are:
+
+1. ValueFilter
+
+scan 'cencus', {FILTER => "ValueFilter(=,'binary:Maria')"}
+
+In ValueFilter we search for Value.
+
+2. QualifierFilter
+
+scan 'cencus', {FILTER => "QualifierFilter(=,'substring:Name')"}
+
+In ValueFilter we search for Column.
+
+3. FamilyFilter
+
+scan 'cencus', {FILTER => "FamilyFilter(=,'substring:professional')"}
+
+In ValueFilter we search for Column Family.
+
+
+Count number of records
+=====================
+
+count 'cencus'
+
+
+
+
+
+CASSENDRA
+==========
+
+1. What is Cassandra
+===================
+
+Cassandra is a distributed column oriented database and is highly performant.
+
+It is highly scalable also.( We can add as many machines as we want easily ) 
+so,even if one of system goes down there is no issue with avilability.
+
+When we require transactional activities or quick retrieval. 
+Low latency retrieval.
+
+2. Cap Theorum
+==============
+
+C-Consistency
+A - Availability
+P - Partition tolerance
+
+Hbase CP (Consistency & Partition tolerance)
+Cassandra - AP (Availability & Partition tolerance)
+
+Consider you have 100 likes on your linkdin post.
+
+100 likes ( Now Satish liked it)
+It will still show 100 likes for sometime, after sometime it may update to 101 like.
+This is availability.
+
+3. How Does a Cassandra Cluster Look Like?
+=====================================
+
+In case of your Hbase we run on hadoop cluster.
+
+Also Hbase provides a master-slave architecture where master is the hmaster and 
+slave is the region server however in case of Cassandra there is no master.
+
+All the nodes are peers.
+
+Cassandra has a decentralized architecture.
+
+For communication among themself they use gossip protocol.
+Each machine knows what is there in another machine.They are like friends they communicate with each other.
+
+In master slave architectures there can be down times if master fails. 
+
+Because of a decentralized (no master architecture) Cassandra is highly available
+
+
+4. Tunable Read/Write Consistency
+===============================
+
+Cassandra is a AP system.
+
+It by default compromises on the consistency to be highly available.
+
+Step 1: Client will send the request to get value of A.
+
+Step 2: The request will go to one of the machine. for instance node 5.
+
+Step 3: Node 5 will go and talk to node 1 to get the results.
+
+Step 4: Node 5 will return the result to client.
+
+So result in this case may not be consistent, it may give old value beacuse it is not checking with the all machines that if value of A is updated or it is the same.
+
+
+Cassandra provides you a tunable consistency.
+=======================================
+Cassandra can provide you consistency and you can tune it according to the requirment.
+
+I want the result only when 2 nodes agrees on the same result.
+
+I want the result only when all nodes agree on the same result.
+
+Levels of tunable consistency.
+=========================
+
+One node (default) Availability is high and consistency is low.
+
+All nodes (All the machines should agree on the same result) Availablity is low and consistency is high.
+It will take much time.
+
+Quorum (2 nodes)
+
+
+
+
+5. Differences Between Hbase and Cassandra
+=====================================
+
+Similarities:
+==========
+Both of these are nosql distibuted databases and hold the data in a columnar fashion.
+
+Both of these are highly scalable.
+
+When you want to perform transaction (updates,inserts) and quick reads.
+
+Low latency operations.
+
+Differences:
+===========
+
+1. Hbase has a master-slave architecture. 
+However 8 Cassandra has a decentralized architecture. (highly available as it has no dependency on single master)
+
+2. Hbase provides (CP) consistency and partition tolerance and Cassandra (AP) availability and partition tolerance. 
+However cassandra also offers tunable consistency.
+
+Where we can set the consistency level:
+
+One node
+All nodes
+Quorum ( we can provide how many machines can agree on same result)
+
+3. Hbase runs on top of hadoop cluster. that means data is kept in hdfs.
+
+However cassandra has a separate cluster than your hadoop cluster.
+
+if you are working on hadoop then hbase is a perfect choice mostly.
+
+4. Hbase Shell Commands.
+
+Cassandra has its own query language called as CQL (Cassandra Query Language). 
+
+This CQL is very similar to normal SQL.
+
+Apache Phoenix
+=============
+Hbase syntax looks quite hard.
+
+Gives you a sql interface on top of nosql
+
+Apache Phoenix works on top of Hbase where you can query your Hbase using SQL like
+
+
+
+HIVE-HBASE INTEGRATION
+======================
+
+Creating a table which we can access both from hive as well as hbase.
+
+We want to access the table from hive when we want to do some aggregation like group by, order by.
+
+We want to access the table from hbase when we want to do quick searching or when we want to do inserts updates or deletes.
+
+use case of hive-hbase table
+========================
+
+sometimes also called as hbase table managed by hive.
+
+1. if on a hbase table we want to do any processing like groupby aggregation or any other
+   kind of mapreduce activity then its better to create a hbase table managed by hive.
+
+2. you are doing some processing in hive. after the processing you want to dump the data in hbase table, for quick searching.
+    in this case you can create hbase table managed by hive.
+
+step 1: we will have a dataset kv1.txt
+step 2: we will be creating a hive table based on the structure of kv1.txt file (2 columns)
+step 3: we will be loading the file kv1.txt in the hive table created in step 2.
+step 4: we will be verifying the data in the table.
+step 5: you will create a hbase table managed by hive.
+step 6: load the data from normal hive table created in step 2 and put it in special table created in step 5.
+
+
+
+Step 1: Make sure file kv1.txt file is placed inside Downloads folder in cloudera VM
+(the delimiter in this file is CTRL-A character which is default in delimiter in hive)
+
+Step 2 : Create a table in hive.
+
+Step 3 : Load the data in hive table.
+
+load data local inpath '/home/cloudera/Desktop/shared1/kv1.txt' into table pokes;
+
+Step 4 : Verify the data in hive table.
+
+select * from pokes;
+
+There is no concept of primary key in hive.So, there can be multiple values for same key.
+HBase tables cannot have multiple identical keys,only unique keys.
+
+Step 5 : Create a Hive-Hbase table.
+
+CREATE TABLE hbase_table_1(key int, value string) 
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler' 
+WITH SERDEPROPERTIES ("hbase.columns.mapping" = ":key,cfl:val") 
+TBLPROPERTIES ("hbase.table.name" = "xyz");
+
+Note: The TBLPROPERTIES command is not required, but those new to Hive-HBase integration may
+find it easier to understand what's going on if Hive and HBase use different names for the same table.
+
+In this example, Hive will recognize this table as "hbase_table_1" and HBase will recognize this table as "xyz".
+
+Data will be stored in HBase in the form of HFiles, and Metadata is stored in Hive.
+
+When you get an error during creating hive-hbase table try this
+===================================================
+hadoop fs -rm -r -f /hbase/WALs
+hadoop fs -rmdir /hbase/WALs
+sudo service hbase-master restart
+sudo service hbase-regionserver restart
+hbase shell #new shell
+
+Step 6: From the Hive prompt, insert data from the Hive table pokes into the Hive-HBase table hbase_table_1
+
+INSERT OVERWRITE TABLE hbase_table_1 SELECT * FROM pokes WHERE foo=98;
+
+
+INTERGRATION WITH HADOOP
+=========================
+
+In cisco I worked on a project called as customer 360
+
+(Cico members needed to see all the details of client all the history)
+
+the data was present in form of tables in relation databases..
+
+there were 8 to 10 big tables..
+
+what was required is to do complex joins, group by etc... on these 8 to 10 large tables to get the right view.
+
+it was taking 48 hours..
+
+ucrm table - functional cases 1
+
+tac table technical cases
+
+The drawbacks of running such a complicated query in oracle database is that
+
+1. the query takes a lot of time even after optimization
+
+2. it will impact the performance of source database (whatever transactions are happening will get impacted)
+
+We planned to ingest the data in hadoop and do the analysis there.
+
+1. the analysis can be done quickly because of parallelism
+
+2. our source database wont be impacted any more.
+
+
+step 1: we ingested all the tables from oracle database to hdfs using sqoop. (2 tables)
+
+step 2: once the data is in hdfs we created hive external tables on top of those datasets. (create hive table on top of the 2 datasets)
+
+step 3: create a hive-hbase table
+
+step 4: Do the complicated processing on 2 tables in hive and finally insert the results in the special table created in step 3.
+
+Finally from HBase table UI expert will take it and show it in proper dashboard way that is not our headache.
+
+step 5: we scheduled the recurring sqoop imports using scheduler ( cisco tidal scheduler)
+
+oozie/airflow
+
+PRACTICAL
+=========
+
+Importing data from mysql to hdfs
+============================
+
+sqoop import \
+--connect jdbc:mysql://quickstart.cloudera:3306/retail_db \
+--username retail_dba \
+--password cloudera \
+--table orders \
+--warehouse-dir /user/sumitm/project
+
+sqoop import \
+--connect jdbc:mysql://quickstart.cloudera:3306/retail_db \
+--username retail_dba \
+--password cloudera \
+--table customers \
+--warehouse-dir /user/sumitm/project
+
+hadoop fs -ls /user/sumitm/project
+
+Creating hive table on top of the file we loaded in hdfs using sqoop
+=======================================================
+
+sqoop create-hive-table \
+--connect jdbc:mysql://quickstart.cloudera:3306/retail_db \
+--username retail_dba \
+--password cloudera \
+--table orders \
+--hive-table orders \
+--fields-terminated-by ','
+
+By using sqoop table you can create hive table which will have same schema as mysql table 
+You can use it when you dont want to write the schema n all.
+
+When you create table using sqoop it goes in default database in Hive.
+
+sqoop create-hive-table \
+--connect jdbc:mysql://quickstart.cloudera:3306/retail_db \
+--username retail_dba \
+--password cloudera \
+--table orders \
+--hive-table customers \
+--fields-terminated-by ','
+
+Loading data into hive table
+=======================
+
+load data inpath '/user/sumitm/project/orders' into table orders;
+
+load data inpath '/user/sumitm/project/customers' into table customers;
+
+Creating hive-hbase table
+======================
+
+Purpose is that we can access same table from hive and hbase too.
+So that we can get advantages of both hive and hbase to do things on that table.
+
+create table sumit_hbase(customer_id int,customer_fname string, customer_lname string,order_id int, order_date string)
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler' with 
+SERDEPROPERTIES ('hbase.columns.mapping'=':key,personal:customer_fname,personal:customer_Iname, personal:order_id,personal:order_date');
+
+Writing the complicated query and dump it to hive-hbase table
+===================================================
+
+insert overwrite table sumit_hbase 
+SELECT c.customer_id, c.customer_fname, c.customer_lname, 
+o.order_id, o.order_date 
+FROM customers c
+JOIN orders o 
+ON (c.customer_id = o.order_customer_id);
+
+Hive = Select * from sumit_hbase where customer_id = 9992; (0.174 sec)
+
+Hbase = get 'sumit_hbase' 9992 ( 0.04 sec)
+
+UI Developer will take the results from hbase table.
+
+We can use schedulers like oozie/airflow
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

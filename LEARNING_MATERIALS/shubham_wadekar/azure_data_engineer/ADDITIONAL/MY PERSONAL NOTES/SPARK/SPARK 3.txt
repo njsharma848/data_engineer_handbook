@@ -1,0 +1,1028 @@
+
+
+SESSION 16
+==========
+
+
+import org.apache.spark.SparkContext
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+
+object totalspent extends App {
+  
+ Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/customerorders.csv")
+  
+ val mappedInput = input.map(x => (x.split(",")(0),x.split(",")(2).toFloat))
+
+ val totalByCustomer = mappedInput.reduceByKey((x,y) => x+y) 
+
+val premiumCustomers = totalByCustomer.filter(x => x._2 > 5000)
+
+val doubledAmount = premiumCustomers.map(x._1, x._2*2)).cache()
+
+val doubledAmount = premiumCustomers.map(x._1, x._2*2)).persist(StorageLevel.MEMORY_ONLY)
+
+
+doubledAmount .collect.foreach(println)
+  
+println(doubledAmount.count)
+
+scala.io.StdIn.readline()
+  
+}
+
+doubledAmount.toDebugString
+
+rdd.toDebugString = is to check the LINEAGE GRAPH and we need to read it from bottom to top.
+All details of cache and persist and memory or disk used with ser or deser form.
+Run it in terminal.
+
+if we use cache() and we dont have enough memory then it will skip caching it. it wont give any error.
+persist(StorageLevel.MEMORY_AND_DISK) = prefarrad choice.
+		
+We are doing it for optimization.If it is not giving optimization then it should not give error rather skip it.
+
+Do not cache or persist your base rdd.
+
+
+SESSION 17
+==========
+
+How to create and run the jar in spark
+===============================
+
+Create
+======
+Go into the file of which you want create the jar --> right click on the project name --> click on object file -->
+Export --> search (jar) --> JAR file ---> select the export destination --> finish.
+
+
+2 options to select of jar files.
+JAR file - Dependancies are not included(only your code).
+Runnable JAR file - Dependancies are included.
+
+Class object name and class name inside the code should always be the same.
+
+Run
+===
+
+spark-submit --class <class_name> <complete path of the jar>
+spark-submit --class RatingsCalculator C:\Users\Shubham\Desktop\file1.jar
+
+In industry eclipse is only use for development.
+Once you satisfied and tested the code in eclipse
+You need to bundle it in jar and jar will be executed on cluster.
+
+
+
+SESSION 18
+==========
+
+Problem statement = Find the movies having ratings>4 and should be rated at least 10 times.
+
+Files Used = raings.dat,movies.dat
+
+import org.apache.spark.SparkContext
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+
+object TopMovies extends App{
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+  
+val sc = new SparkContext("local[*]","wordcount")
+  
+val ratingsRdd = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/ratings.dat")
+
+val mappedRdd = ratingsRdd.map(x => {
+  val fields = x.split("::")
+  (fields(1),fields(2))
+  })
+
+  //input           //output
+  //(1193,5)        //(1193,(5.0,1.0))
+  //(1193,3)        //(1193,(3.0,1.0))
+  //(1193,4)        //(1993,(4.0,1.0))
+  
+val newMapped = mappedRdd.mapValues(x => (x.toFloat,1.0))
+
+val reduceRdd = newMapped.reduceByKey((x,y) => (x._1 + y._1 , x._2 + y._2))
+ 
+//input
+//(1193,(12.0,3.0)
+
+val filteredRdd = reduceRdd.filter(x=> x._2._2 > 10)
+//applying the first filter condition that movie should be rated at least 10 times.
+  
+//input                //output
+//(1193,(12.0,3.0))    //(1193,4.0)
+
+val ratingsProcessed = reduceRdd.mapValues(x => x._1/x._2).filter(x => x._2 > 4)
+
+val moviesRdd = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/movies.dat")
+
+val moviesMapped = moviesRdd.map(x => {
+val fields = x.split("::")
+  (fields(0),fields(1))
+  })
+
+val joinedRdd = moviesMapped.join(ratingsProcessed)
+
+val topMovies = joinedRdd.map(x => x._2._1)
+
+topMovies.collect.foreach(println)
+
+scala.io.StdIn.readLine()
+
+}
+
+
+
+SESSION 19
+==========
+
+Map vs Map partition
+==================
+http://apachesparkbook.blogspot.com/2015/11/mappartition-example.html
+
+
+what all transformations and actions you have used?
+===========================================
+https://spark.apache.org/docs/latest/rdd-programming-guide.html#transformations
+
+How to open spark-shell from cmd?
+=============================
+
+Go in 
+C:\Spark\spark-2.4.4-bin-hadoop2.7\bin
+
+open cmd from here and give spark-shell as command.
+C:\Spark\spark-2.4.4-bin-hadoop2.7\bin>spark-shell
+
+
+How to open pyspark from cmd?
+==========================
+
+Open cmd --> pyspark
+
+
+DATAFRAMES SESSION 1
+====================
+
+How to create Spark Session?
+========================
+
+Method 1
+========
+
+import org.apache.spark.sql.SparkSession
+
+object DataframesExample extends App {
+  
+val spark = SparkSession.builder()
+.appName("My application 1")
+.master("local[2]")
+.getOrCreate()
+
+//procssing
+
+spark.stop()
+
+}
+
+SparkSession.builder() = We use build method in order to build our spark-session.
+.appName("My application 1") = Giving some app name which shows in UI when we run the code.
+.master("local[2]") = Running in local with 2 cores.
+.getOrCreate() = If the session is avilable get it or not then create it.
+
+.appName
+.master
+
+These 2 are the configurations we are giving.
+
+spark.stop() = End of the application or stop the spark session.
+
+spark session is a singleton object = Means for one application there will be only one spark session.
+
+treat your spark session like your driver
+
+
+Method 2
+========
+
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.SparkConf
+
+object DataframesExample extends App {
+  
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+
+//procssing
+
+spark.stop()
+
+}
+
+Int this method2 we are sepcifying the configurations earlier and then calling it in spark session,
+so that we don't need to chnage the spark-session.
+This method is mostly used in industry.
+
+
+DATAFRAMES SESSION 2
+====================
+
+How to read the file using Dataframes.
+=================================
+
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.SparkConf
+
+object DataframesExample extends App {
+  
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+
+val ordersDf = spark.read
+.option("header",true)
+.option("inferSchema",true)
+.csv("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+
+ordersDf.show()
+
+ordersDf.printSchema()
+
+
+scala.io.StdIn.readLine()
+spark.stop()
+
+}
+
+.option("header",true) = It will automatically give the header.By default it treats header as a row.
+.option("inferSchema",true) = It will try to automatically infer the schema of a table..
+
+Do not use inferSchema in production enviornment,it can lead to serious issues.
+
+Actions - 1.Read(reading the csv) 2.Read(inferring the schema) 3.show
+No of actions = No of jobs
+
+
+
+
+DATAFRAMES SESSION 3
+====================
+
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+
+object DataframesExample extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)  
+  
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+
+val ordersDf = spark.read
+.option("header",true)
+.option("inferSchema",true)
+.csv("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+
+val groupedOrdersDf = ordersDf
+.repartition(4)
+.where("order_customer_id > 10000")
+.select("order_id","order_customer_id")
+.groupBy("order_customer_id")
+.count()
+
+groupedOrdersDf.show(50)
+
+scala.io.StdIn.readLine()
+spark.stop()
+
+}
+
+This 50 means show 50 rows.By default it shows 20 rows.
+
+Spark2 style is like sql.
+
+DAG
+====
+Sometimes,while working with dataframes and datasets we might see more no of jobs than the action.
+And you don't need to worry about them.
+
+No of stages = No of wide transformations.
+each stage has task
+No of tasks = No of partitions.
+
+Whenever the data is shuffled it rights it to Exchange(right buffer) in the disk.
+Then next stage reads from that exchange.
+
+How to set the logging level? So that logging messeges won't come.
+========================================================
+
+Logger.getLogger("org").setLevel(Level.ERROR)
+
+Add this line to your code,if any error then show it else give result directly.
+
+How to through your own log message
+================================
+
+You can give specific logging message if you want for.e.g
+
+Logger.getLogger(getClass.getName).info("my application is completed sucessfully")
+
+In this you will get class name and logging message you have given.It will be very helpful in debugging
+purpose if you give proper class name and info message.
+
+Logging message = INFO DataframesExample$: my application is completed sucessfully
+
+
+
+
+
+DATAFRAMES SESSION 4
+====================
+
+High level constructs
+=================
+
+whenever we are working with dataframes or datasets
+we are dealing with higher level programming constructs..
+
+your spark compiler will convert your high level code(dataframe code) to low level rdd code.
+
+You know there are two things 1.driver2. executors
+
+Driver will convert your high level code into low level rdd code and then it will send the low level code to the executors.
+
+Low level constructs
+=================
+
+when we were working with raw rdd that was a low level construct code.
+
+For e.g
+
+rdd.map( x => {
+//anonymous function (low level code)
+})
+
+This is a anonymous function and it will be directly sent to executors beacuse this is a low level code.
+flatmap,map,filter,foreach all will be directly sent to executors without any compilation.
+
+How to put breakpoints?
+====================
+
+By double clicking on left side blue line.
+
+Proof of High level sent in driver and Low level sent in Executor
+===================================================
+
+1. First put the breakpoints.
+2. Debug As --> Scala Application.
+3. It will open the debug window.
+4. Whatever breakpoints you have selected will be shown in debug.
+5. All the high level construct code will be in Thread[main] means sent to Driver
+6. All the Low level construct code will be in Daemon Thread means sent to Executor
+7. To see next breakpoint click on resume button on the top or click(F8).
+
+
+
+DATAFRAMES SESSION 5
+====================
+
+RDD VS DATAFRAME VS DATASETS
+============================
+
+RDD
+===
+
+When we deal with raw rdd. we deal with low level code like
+map
+filter
+flatMap
+reduceByKey
+
+Painpoints :
+==========
+1. This low level code is not developer friendly.
+2. Rdd lacks some of the basic optimizations and more could have been done.
+
+DATAFRAMES API
+==============
+
+Dataframes released in spark 1.3 version.
+
+Higher level constructs which makes the developer life  easy.SQL like syntax so easy to write the code.
+
+Challenges with dataframes:
+=======================
+
+1. Dataframes do not offer strongly typed code.type errors wont be caught at compile time rather we
+get surprise at runtime.
+
+2. Developers felt that there flexibility has become limited.
+Developers were not able to call low level code(rdd) some of them are avilable but most of them are not.
+So,flexibility has gone.
+For e.g - Sometimes you want to create anonymous function.
+
+Now,there is one solution..
+Dataframes can be converved to rdd
+
+df.rdd (whenever we want more flexibility and type safety(errors will be caught at runtime))
+
+But there is one issue with this too..
+
+1. This conversion from dataframes to rdd is not seamless,It came at some cost and time.
+
+2. If we work with raw rdd by converting dataframe to rdd. we will miss out on some of the major optimizations.(notebook)
+Spark Developers has foused on optimizing stuctured APIs (Dataframe API and Dataset API)
+These Dataframe API and Dataset APIs are highly optimized beacuse these go through catalyst optimizer (which optimizes code alot)
+RDD's were left behind. They didn't focus on rdds to much.
+It we convent data frame to rdd just to get Flexibility & type sattley we will lose on optimizations. which data frames could have provided using catalyst optimizer.
+
+Catalyst optimizer / tungsten engine.
+
+
+DATASET API
+===========
+
+Datasets are released in spark 1.6 version.
+
+Advantages with dataset
+====================
+
+1. Datasets offer strongly typed code.type errors will be caught at compile time.(compile time saftey)
+
+2. We got more flexibility in terms of using low level code.
+
+3. Conversion from dataframes to datasets is seamless(easy) and viceversa.
+
+You can do all of these without losing on any optimizations.
+
+History
+======
+
+Before spark 2 both dataframes and datasets were 2 different things.
+
+In spark 2 they merged these 2 into a single unified spark dataset API (Structured API)
+
+Dataframe / Dataset[Row]
+======================
+
+Dataframe is nothing but a dataset of row type.Dataset[Row]
+
+Row is nothing but a generic type which will be bound at runtime.
+
+In case of dataframes the datatypes are bound at runtime
+
+Dataset
+======
+
+However lets say Dataset[Employee]
+This type will be bound at compile time.
+
+So..
+
+Dataset[Row] -> dataframe (type errors are caught at runtime) Row = Generic row.
+
+Dataset[Employee] -> dataset (compile time type saftey) Employee = Specific object.
+
+How to convert dataframe to a dataset?
+=================================
+
+If we replace generic Row with specific object then it becomes a Dataset.
+
+
+DATAFRAMES SESSION 6
+====================
+
+How to convert a dataframe to a dataset?
+==================================
+
+You need to create a case class.
+
+lets say in our case
+create dataset[OrdersData]
+
+Import this library after spark session -> import spark.implicits._
+This library is necessary to convert dataframe to dataset and viceversa.
+
+ordersDf = Dataframe.
+OrdersData = case class we created at top
+ordersDs = Dataset we are creating.
+
+import spark.implicits._
+//Import this library.
+val ordersDs = ordersDf.as[OrdersData]
+
+Code
+====
+case class OrdersData (order_id: Int,order_date: Timestamp,order_customer_id: Int,order_status:String)
+
+object Df extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)  
+  
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+
+val ordersDf = spark.read
+.option("header",true)
+.option("inferSchema",true)
+.csv("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+
+//ordersDf.filter("order_ids < 10").show()
+//This will you give you error at runtime bcz it is Dataframe
+
+
+import spark.implicits._
+val ordersDs = ordersDf.as[OrdersData]
+  
+//Dataset
+ordersDs.show
+
+//If anykind of error it will give at runtime.(compile time saftey)
+  
+scala.io.StdIn.readLine()
+spark.stop()
+
+ }
+
+
+What is more preferred Dataframes or Datasets?
+========================================
+
+Dataframes are more preferred over Datasets.
+
+1. To convert from dataframes to datasets there is an overhead involved and 
+this is for casting it to a particular type.
+Generic row needs to be converted into specific type and this takes time.
+Dataset[Row] --> Dataset[OrdersData]
+
+Serialization - converting data into a binary form.
+
+2. When we are dealing with dataframes then the
+serialization is managed by tungsten binary format(encoders).It is spark specific.
+
+When we are dealing with datasets then the serialization
+is managed by java serialization (slow).It is java specific.
+
+3. Using datasets will help us to cut down on developer mistakes..
+but it comes with an extra cost of casting and expensive serialization.
+
+
+DATAFRAMES SESSION 7
+====================
+
+What do we do spark program? We do three things.
+==========================================
+
+1. Read the data from a Data Source and create a dataframe/datasets.
+
+External data source (mysql database, redshift,mongodb)
+Internal data source (hdfs, s3, azure blob, google storage)(preffered)
+
+so we have the flexibility in spark to create a dataframe directly from an external data source.
+spark is very good at processing but is not that efficient at ingesting data.
+
+Spark gives you a jdbc connector to ingest the data from mysql database directly.
+But it is not recommanded.Spark is a for processing not for ingesting.
+Spark might not be that good at ingesting the data.
+
+What you should do is..
+Spark will get the data from data source and put it into internal data source.
+sqoop to get the data to my hdfs from mysql database and then I will load the
+data from hdfs to spark dataframe.
+
+Use tools like sqoop which are specially made for data
+ingestion to get your data from external data source to
+internal data source.
+
+2. Performing a bunch of transformations and actions.
+
+transformations/actions using higher level constructs.
+
+3. Writing the data to the target (Sink)
+
+Sink = Target data source
+
+Once again target can be internal/external.
+So,use data ingestion tool to dump the output to sink.
+
+
+PRACTICAL
+=========
+
+1. Standardize way of reading the data in spark.
+
+val ordersDf = spark.read
+.format("csv")
+.option("header",true)
+.option("inferSchema",true)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+.load
+
+val ordersDf = spark.read
+.format("json")
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/players.json")
+.load
+
+When you are reading a json there is no concept of header so you always remove that from your code.
+Schema is also inferred so there is no need of that too.
+
+When your file is corrupted then what to do?
+====================================
+
+There are 3 read modes.
+
+1. PERMISSIVE (Default mode)
+=========================
+
+val ordersDf = spark.read
+.format("json")
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/players.json")
+.load
+
+ordersDf.show()
+
+It sets all the fields to null when it encouters a corrupted record
+
+A new column _corrupt_record is get created and corrupt record is shown inside that column and all the other 
+values of that row are set to null.
+
+If you want to see all the values of that corrupted row.
+Then \you need to set 
+ordersDf.show(false)
+
+By default truncate option is on which means true and when make it false it get turned off.
+
+
+2. DROPMALFORMED 
+==================
+
+val ordersDf = spark.read
+.format("json")
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/players.json")
+.option("mode","DROPMALFORMED")
+.load
+
+ordersDf.show()
+
+
+
+There are 7 records in this file. 5 good and 2 corrupted.
+
+This mode will ignore all the corrupted record and it will show only good records.
+
+3. FAILFAST 
+==========
+
+val ordersDf = spark.read
+.format("json")
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/players.json")
+.option("mode","FAILFAST")
+.load
+
+ordersDf.show()
+
+Whenever a malformed record is encountered a exception is raised.
+Malformed records = Corrupted records(records not properly filled or syntax errors)
+
+
+Parquet File Format
+=================
+
+1. Parquet is most suitable file format with spark.
+2. It is by default file foramt for spark so no need to give format also when using parquet file format.
+3. Already schema is attatched to it so no need to infer the schema.
+
+val ordersDf = spark.read
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/users.parquet")
+.load
+
+ordersDf.printSchema
+ordersDf.show(false)
+
+File Formats we talked about = csv, json, parquet
+
+Read Modes = Permissive,Failfast,Dropmalformed
+
+
+DATAFRAMES SESSION 8
+====================
+
+There are 3 options to have the schema for a Dataframe.
+==============================================
+
+1. Infer 
+
+Infer the schema,system will infer the schema.
+
+2. Implicit 
+
+Some files come up with there own schema/There is already schema associated with them.
+They include data + Metadata
+like parquet,avro so in this there is no need to infer the schema.
+
+3. Explicit 
+
+Whenever we are creating dataframe from a file we associate the schema that we want.
+
+Explicit schema
+=============
+
+1. Programatically using StructType
+=============================
+
+StructType(It is like a structure) is applicable for one row and row contains many columns.
+So StructType contains list of columns and inside StructType each column is mentioned using StructField
+
+val ordersSchema = StructType(List(
+StructField("orderid", IntegerType),
+StructField("orderdate", TimestampType),
+StructField("customerid", IntegerType),
+StructField("status", StringType)
+))
+
+val ordersDf = spark.read
+.format("csv")
+.option("header",true)
+.schema(ordersSchema)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+.load
+
+ordersDf.printSchema()
+ordersDf.show()
+
+So here,ordersSchema = Explicit Schema.
+
+scala - spark (Datatypes)
+
+Int - IntegerType 
+Long - LongType 
+Float - FloatType
+Double - DoubleType
+String - StringType
+Date - DateType
+Timestamp - TimestampType
+
+So,in programatic approach you should use spark data types.
+
+Spark has there own data types to give some optimizations.
+It will have some internal optimizations that we don't know.
+
+Librararies which needs to import
+============================
+
+import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.TimestampType
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.StructField
+
+There is third parameter which is optional  If you want to contain the null or not.
+
+StructField("orderid", IntegerType,true),
+
+true = The column can contain nulls.
+false =  The column cannot contain nulls.
+
+
+
+2. DDL String
+===========
+
+In DDL String type you should give scala data types.
+This is a simplier way than programatic approach.
+
+val ordersSchemaDDL = "orderid Int, orderdate String,custid Int, ordstatus String"
+
+val ordersDf = spark.read
+.format("csv")
+.option("header",true)
+.schema(ordersSchemaDDL)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+.load
+
+
+
+PYSPARK
+========
+
+customerorders = session 16
+========================
+
+from pyspark import SparkContext, StorageLevel
+
+from sys import stdin
+
+sc = SparkContext("local[*]", "wordcount")
+
+base_rdd = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/customerorders.csv")
+
+mapped_rdd = base_rdd.map(lambda x :(x.split(",")[0],float( x.split(",")[2])))
+
+totalByCustomer = mapped_rdd.reduceByKey(lambda x, y : x + y)
+
+premiumCustomers = totalByCustomer.filter(lambda x : x[1] > 5000)
+
+doubled_Amount = premiumCustomers.map(lambda x:(x[0], x[1]*2)).persist(StorageLevel.MEMORY_ONLY)
+
+result = doubled_Amount.collect()
+
+for x in result:
+    print(x)
+
+print(doubled_Amount.count())
+
+stdin.readline()
+
+
+How to run the python file from command prompt?
+==========================================
+spark-submit /Users/Shubham/PycharmProjects/pythonProject2/customerorders(cache).py
+
+In spark we needed to create a jar and then run it on cmd but here you can directly run the file from cmd using python file.
+
+
+raings.dat,movies.dat = session 18
+============================
+
+from pyspark import SparkContext
+
+sc = SparkContext("local[*]","joindemo")
+
+ratings_rdd = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/ratings.dat")
+
+mapped_rdd = ratings_rdd.map(lambda x: (x.split("::")[1], x.split("::")[2]))
+
+new_mapped_rdd = mapped_rdd.mapValues(lambda x: (float(x),1.0))
+
+reduce_rdd = new_mapped_rdd.reduceByKey(lambda x,y: (x[0]+y[0], x[1]+y[1]))
+
+filtered_rdd = reduce_rdd.filter(lambda x: x[1][0] > 10)
+
+final_rdd = filtered_rdd.mapValues(lambda x: x[0]/x[1]).filter(lambda x: x[1] > 4)
+
+movies_rdd= sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/movies.dat")
+
+movies_mapped_rdd = movies_rdd.map(lambda x: (x.split("::")[0],(x.split("::")[1],x.split("::")[2])))
+
+joined_rdd = movies_mapped_rdd.join(final_rdd)
+
+top_movies_rdd = joined_rdd.map(lambda x: x[1][0])
+
+result = top_movies_rdd.collect()
+
+for x in result:
+    print(x)
+
+
+Structured API's
+=============
+
+DataSets are not supported in pyspark.
+So, pyspark does not provide compile time saftey.
+
+Pyspark = DataFrame, Spark SQL
+
+SparkSession
+==========
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+orderDf = spark.read.option("header",True).option("inferSchema",True).csv("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+
+orderDf.show()
+
+orderDf.printSchema()
+
+spark.stop()
+
+code=Df session 3
+================
+
+find the total orders placed by each customer where customer id > 10000
+
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+orderDf = spark.read.option("header",True).\
+    option("inferSchema",True).\
+    csv("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+
+groupedDf = orderDf.repartition(4) \
+.where("order_customer_id > 10000") \
+.select("order_id","order_customer_id") \
+.groupBy("order_customer_id") \
+.count()
+
+groupedDf.show()
+
+1. Wrong column name
+so when we give a column name which does not exist then the error is shown at runtime and not at compile time.
+
+
+2. Standard way of reading.
+
+orderDf = spark.read.format("csv")\
+.option("header",True)\
+.option("inferSchema",True)\
+.option("path","/Users/trendytech/Desktop/data/orders.csv")\
+.load()
+
+orderDf = spark.read.format("json")\
+.option("path","/Users/trendytech/Desktop/data/orders.json")\
+.load()
+
+
+Explicit schema
+=============
+
+1. Programatically using StructType
+=============================
+
+ordersSchema = StructType([
+StructField("orderid", IntegerType()),
+StructField("orderdate", TimestampType()),
+StructField("customerid", IntegerType()),
+StructField("status", StringType())
+])
+
+2. DDL String
+===========
+
+ordersDDL ="""orderid Integer, orderdate Timestamp,custid Integer, ordstatus String"""
+
+Multiline comment = """       """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

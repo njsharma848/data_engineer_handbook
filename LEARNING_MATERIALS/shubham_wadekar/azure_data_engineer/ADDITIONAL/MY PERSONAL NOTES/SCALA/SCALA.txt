@@ -1,0 +1,937 @@
+
+SCALA CODING QUESTIONS
+=======================
+
+
+1. 
+
+A Company Selenia is planning a big sale at which they will give their customers a special promotional discount. 
+Each customer that purchase a product from the company has a unique customerID numbered from 0 to N-1.
+Andy the marketing head of the company has selected bill amounts of the N customers for the promotional scheme. 
+The discount will be given to customers whose bill amounts are perfect squares. 
+The customers may use this discount on a future purchase.
+
+Write an algorithm to help Andy find the number of customers that will be given discounts.
+
+Input:
+
+The first line consists of an integer numOfCust, representing the number of customers whose bills are selected for the promotional discount (N).
+
+The second line consists of N space-separated Integers bill1, bill2, bill3.. representing the bill amounts of the N customers selected for the promotional discount.
+
+7
+
+10 20 16 25 30 40 36
+
+Output:
+
+print an integer representing the number of customers that will be given discounts.
+
+3
+
+LOGIC
+=-====
+
+For the Value 15
+
+Math.sqrt(15) - 3.9 this value will be between 3 and 4 for sure
+
+Ceil of this above value Ceil(3.9) = 4
+
+Math.sqrt(15).ceil() - Math.sqrt(15)
+
+4 - 3.9 = 0.1
+
+If the number is not perfect square the above value wont be equal to 0.
+
+For the value 16
+
+Math.sqrt(16). ceil() - Math.sqrt(16)
+
+4 - 4 = 0
+
+If the number is perfect square than the above value will be equal to 0
+
+The first line of input is the number of customers which is an integer.
+5
+
+The second line will hold the bill amounts of all the above N customers. (We can take it as string)
+10 16 25 36 40
+
+
+10
+16
+25
+36
+40
+
+We have taken all of these 5 as strings.
+Now we have to convert each string into integer.
+
+CODE
+=====
+
+2. 
+
+You are given a list of integers and integer k. 
+Write an algorithm to find the number of elements in the list which are strictly less than k.
+
+Input:
+
+The first line of Input consists of two space separated integers - size and numk, 
+representing the number of elements in the list (N) and the integer to be compared (K). 
+
+The second line consists of N space separated integers - element[0], element[1] element[N-1] representing the list of integers.
+
+fist line - 5 40
+
+second line - 10 20 30 40 50
+
+Output:
+
+Print an integer representing the number of elements in the list which are strictly less than num.
+
+CODE
+======
+
+3. 
+
+Given a sentence of words we need to reverse it will 3 variations.
+
+Input: hello how are you
+
+Output:
+
+uoy era woh olleh (reverse the sentence literally)
+
+olleh woh era uoy (reverse each word in the sentence)
+
+you are how hello (reverse the order of words in sentence)
+
+CODE
+======
+
+
+SCALA INTERVIEW SESSION 1
+========================
+
+DEFAULT ARG
+===========
+
+object MyFirst extends App {
+
+println("hello world")
+
+def add(num: Int, incrementBy: Int) = { 
+         num + incrementBy
+  }
+println(add(5,1))
+}
+
+add(5,10) = 6
+
+
+object MyFirst extends App {
+
+println("hello world")
+
+def add(num: Int, incrementBy: Int = 1) = { 
+         num + incrementBy
+  }
+println(add(5,1))
+}
+
+add(10) = 11
+Beacuse in this we have given default value as incrementBy: Int = 1
+
+add(10,2) = 12 (This 2 will override that 1)
+
+
+object MyFirst extends App {
+
+println("hello world")
+
+def add(num: Int = 8, incrementBy: Int = 1) = { 
+         num + incrementBy
+  }
+println(add())
+}
+
+Ans = 10
+
+Now if default values are 8 and 1 and you want to give increment by 7
+
+object MyFirst extends App {
+
+println("hello world")
+
+def add(num: Int = 8, incrementBy: Int = 1) = { 
+         num + incrementBy
+  }
+println(add(7))
+}
+
+If you give this it will take 7 as num:Int Ans will be = 8(7+1)
+
+That where comes the concept of
+
+NAMED ARGS
+============
+
+object MyFirst extends App {
+
+println("hello world")
+
+def add(num: Int = 8, incrementBy: Int = 1) = { 
+         num + incrementBy
+  }
+println(add(incrementBy = 7))
+}
+
+Ans = 15
+
+
+VARIABLE ARG
+============
+
+def prntFn(name: String*) = {
+for ( i <- name) {
+println(i)
+ }
+}
+ prntFn("hello","how","are","you")
+}
+
+String* = It is a kind of list of variables( we can pass any no of parameters.)
+
+Ans = 
+hello
+how
+are
+you
+
+NULL
+=====
+
+Null is a trait in scala.
+
+There exists only one instance of Null, and that is null
+
+E.g
+def tryIt (thing: Null) = {println("that worked")}
+tryIt(null)
+
+Ans = that worked
+
+You cannot pass any other parameter than null
+
+we should restrict the use of null as its not preferred.
+
+because it can lead to null pointer exceptions.
+
+NullPointerException is a RuntimeException.
+In Java, a special null value can be assigned to an object reference.
+NullPointerException is thrown when program attempts to use an object reference that has the null value
+
+NIL
+===
+
+Nil is an empty list.
+
+E.g
+
+val c = Nil
+
+println(c)
+
+Ans= List()
+
+NOTHING
+========
+
+Nothing is a trait in Scala. There are no instances of Nothing.
+
+Nothing means that there was an error or exception and nothing was returned.
+
+def fun = {
+   throw new Exception
+ }
+
+fun
+
+
+OPTION
+=======
+
+consider you are writing a function and you run into the
+situation where you dont have a useful value to return.
+then what to do?
+
+returning null is not preffered because it can lead to null
+pointer exceptions.
+
+Scala has a built in solution to this problem.
+
+make sure we do not use null in our code.
+
+rather use Option.
+
+Option return some or none.
+
+def getAStringMayBe(num: Int): Option[String] = {
+if (num >= 0) Some("A positive number!")
+else None
+}
+
+def printResult(num: Int) = { 
+getAStringMayBe (num) match {
+case Some(str) => println(str) 
+case None => println("No String!")
+  }
+}
+printResult(-10)
+
+
+UNIT
+=====
+
+Unit is like a method that doesnt return a value.
+
+its like a void in java to some extent
+
+()
+
+// Nothing means that there was an error and nothing
+was returned.
+
+// Unit means that there are side effects.
+
+def funcNew = {
+println = ("hello world")
+}
+
+Here return type will be Unit.Beacuse println = ("hello world") is side effect.
+
+How do you deal with nulls in Scala
+=============================
+Ans = Using options.we should not use nulls in our code.
+
+we can handle none using getOrElse
+
+Example
+========
+EX-1
+======
+case class Address (city: String, state: String, zip: String)
+
+class User(email: String, password: String) {
+
+var firstName: String = _
+var lastName: String = _
+var address: Address = _
+}
+
+val usr = new User("trendytech.sumit@gmail.com", "abcd")
+
+println(usr.firstName.length)
+
+==> You will get null pointer exception as you have given value as null (_ means null).
+
+EX-2
+====
+case class Address (city: String, state: String, zip: String)
+
+class User(email: String, password: String) {
+
+var firstName: Option[String] = None 
+var lastName: Option[String] = None
+var address: Option[Address] = None 
+}
+
+val usr = new User("trendytech. sumit@gmail.com", "abcd")
+
+println(usr.firstName.getOrElse("<not assigned>"))
+
+==> In this case we are using Option + None to handle the null ( Ans = None if getorelse is not mentioned.
+And if this command is given then ans will be not assigned. )
+
+Now if you give value as 
+
+var firstName: Option[String] = Sumit And you have given getorelse command then still the answer willl be Sumit.
+
+EX-3
+====
+case class Address (city: String, state: String, zip: String)
+
+class User(email: String, password: String) {
+
+var firstName: Option[String] = None 
+var lastName: Option[String] = None
+var address: Option[Address] = None 
+}
+
+val usr = new User("trendytech. sumit@gmail.com", "abcd")
+
+println(usr.firstName.getOrElse("<not assigned>"))
+usr.firstName =  Some("Sumit") 
+usr.lastName = Some("Mittal")
+usr.address Some(Address("Bangalore", "Karnataka", "560037")) 
+
+println(usr.firstName.getOrElse("<not assigned>"))
+
+
+SCALA INTERVIEW SESSION 2
+========================
+
+YIELD
+=====
+
+Vector is kind of a mix of Array and a List
+
+Array provides you indexed support. List gives you immutability
+
+vector provides indexed based searching and immutablity.
+
+with the help of yield we can get a new list from a for loop.
+
+Example
+=======
+
+object MySecond extends App {
+
+val b = for(i <- 1 to 10) yield {
+i*i}
+println(b)
+
+Output = Vector(1, 4, 9, 16, 25, 36, 49, 64, 81, 100)
+
+val c = for (i <- 1 to 10) yield {
+if(i%2 == 0)
+i*i
+}
+
+println(c)
+
+Output = Vector((), 4, (), 16, (), 36, (), 64, (), 100)
+
+We are iterating over all 10 value thats why we are getting output like this.
+
+In order to solve this problem comes the concept of if guard.
+
+
+IF GUARD
+========
+
+Syntax 1
+=======
+
+val c = for (i <- 1 to 10; if i%2 == 0) yield {
+i*i
+}
+println(c)
+
+There is a slight difference in the syntax here.
+We are giving if condition inside the for loop,and there is no bracket for that condition.
+
+Filetering in for loop so we get relevant results.
+
+Syntax 2
+=======
+
+val d = for {
+i <- 1 to 10
+if i%2 == 0} yield i*i
+
+println(d)
+
+
+PATTERN GUARD
+==============
+
+Case statements can be combined with if expressions
+to provide extra logic during pattern matching.
+
+if you use if inside your case statement it is called as pattern guard.
+
+Example 1
+=========
+
+def checkSign(x: Int): String = {
+
+x match {
+
+case a if a < 0 => s"$a is a negative number"
+case b if b> 0 => s"$b is a positive number" 
+case c => s"$c is neither positive nor negative"
+  }
+}
+
+println(checkSign(0))
+
+Example 2
+=========
+
+def f(x: Option[Int]) = x match { 
+case Some(i) if i%2 0 => println(i) 
+case None => println("none")
+case _ => println("something else") 
+}
+
+
+FOR COMPREHENSION
+===================
+
+We write the for loop but it will convert into set of functions for better performance.
+
+for(i <- 1 to 10) println (i*i)
+(1 to 10).foreach(i => println(i*i))
+
+for(i <- 1 to 10) yield i*i
+(1 to 10).map(i => i*i)
+
+
+DIFFERENCE BETWEEN == IN JAVA AND SCALA
+=======================================
+
+In Java == is meant for reference comparison
+
+to check the natural equality we use equals method in Java.
+
+a = new String(“Sumit”)
+b = new String(“Sumit”)
+
+a == b
+the above will return false in Java because both a and b are different references.
+
+Referances means ( object a and b )
+
+a.equals(b) in Java it gives true.
+
+in Scala == is meant for content comparison
+
+== is same as equals.
+== is internally implemented as equals.
+
+eq to compare the references.
+
+in Java == is an operator.
+in Scala there are no operator everything is a method
+
+
+STRICT VAL VS LAZY VAL
+=====================
+
+STRICT VAL
+==========
+
+object MyThird extends App{
+
+val r = 10
+val area = {
+
+println("calculating area of circle")
+3.14*r*r
+ }
+println(area)
+}
+
+By default strict val is assigned.
+
+LAZY VAL
+========
+
+object MyThird extends App{
+
+val r = 10
+lazy val area = {
+
+println("calculating area of circle")
+3.14*r*r
+ }
+println(area)
+}
+
+When you give lazy val the function or whatever inside{} will not get executed.
+It will only get executed when you refer to for.eg = println(area)
+To make it lazy we use lazy keyword.
+lazy val is evaluated during the first use.
+
+
+Default Scala packages
+====================
+
+By default, three packages are implicitly imported for you
+
+Java.lang._
+Scala._
+Scala.Predef._
+
+SCALA APPLY
+===========
+
+Apply serves the purpose of closing the gap between object oriented and function paradign in Scala.
+
+we will be able to call an object like a function
+
+object Person {
+def apply(name: String, age: Int) = {
+s”$name is $age years old”
+  }
+}
+
+Person.apply(“Sumit”,30)   OR
+Person.((“Sumit”,30)
+
+case class Person(name: String, age: Int)
+Person(“Sumit”,30)
+
+
+Diamond problem in Scala and how it is solved.
+=======================================
+
+A problem which comes with multiple inheritance.
+
+class A {
+func1
+}
+
+class B{
+func1
+}
+
+class C extends A,B {
+func1()
+}
+
+System gets confused which function we are referring to for e.g func1 in class A and B. Class C gets confused.
+
+Diamond problem is nothing but Confusion araised in case of multiple inheritancewhen both the clasees have same function.
+
+How exactly this is handled in Scala?
+
+multiple inheritance is possible using traits in Scala.
+trait is to some extent like an interface in Java.
+traits provide more flexibility than interfaces.
+A trait can have both implemented and unimplemented
+things.
+but interface has only unimplemented things.
+
+Example
+=======
+
+object MyThird extends App{
+
+trait traitA {
+def name = println("This is the grandparent trait")
+}
+
+trait traitB extends traitA { 
+override def name = { 
+println("B is a child of A.")
+super.name
+  }
+}
+
+trait traitC extends traitA { 
+override def name = { 
+println("C is a child of A.")
+super.name
+  }
+}
+
+object grandChild extends traitB with traitC
+
+grandChild.name
+}
+
+Output = 
+C is a child of A
+B is a child of A
+This is the grandparent trait
+
+You can clearly see in the above case both the traitA,B,C have same function name but still it is not getting confused.
+
+Scala does not support inheritance from multiple classes, but a user can extend multiple traits in a single class.
+
+linearization rule come into play to decide the call hierarchy.
+
+grandChild -> traitC -> traitB -> traitA
+
+It goes from Right to Left.
+
+
+
+Why Scala over Python or Java
+=========================
+
+Scala we can write a very consise code,moreover Spark is written in Scala.
+
+so if any new feature is released in Spark then first it comes in Scala and then rolled to other languages.
+
+Scala gives you the best performance.
+
+
+What is type Safe in Scala?
+=======================
+
+Type Safety means that the compiler will validate types
+while compiling, and throw and error if you try to assign
+the wrong type to a variable.
+
+
+What is the difference between statically typed vs dynamically typed language
+=================================================================
+
+A language is statically typed if the type of a variable is
+known at compile time rather than runtime.
+
+E.g = Java, C, Scala
+
+so we need to give the datatype when we are using.
+
+Static typing usually results in a better performance because compiler knows datatypes in advance 
+and has scope to do optimizations.
+
+In Static type we do not run into errors at runtime.
+
+In dynamically typed language the type is checked at runtime.
+
+E.g = Javascript, Python etc.
+
+
+Exception handling in Scala
+=======================
+
+Exception = Exception is a abnormal condition which arise because of your code.
+E.g = Divide by zero error
+
+Error = Error is a abnormal condition because of system issues.
+E.g = Out of memory error
+
+It is handled by try and catch.
+
+try {
+val b = 5/0
+ }
+
+catch {
+            case e: Exception => println(“please give a
+            denominator other than 0”)
+ }
+
+When try gives an exception then only it goes to catch.
+
+finally {
+println( " I will always execute")
+}
+
+MONAD
+=======
+
+Monad is not a class or a trait. it is just a concept.
+
+Monads is a construction which performs successive calculations
+
+A monad is an object that wraps another object in Scala.
+
+The output of a calculation at any step is the input to other calculations.
+
+val list1 = List(1, 2, 3, 4)
+val list2 = List(5, 6, 7, 8)
+
+list1.map { x => list2.map {
+y => x + y
+  }
+}
+
+List(List((1+5),(1+6),(1+7),(1+8)),
+List((2+5),(2+6),(2+7),(2+8)),...
+
+List(List(6,7,8,9),List(7,8,9,10),List(),List())
+
+List(6,7,8,9,7,8,9,10..)
+
+
+Streams in Scala
+==============
+
+he Stream is a lazy lists where elements are evaluated only when they are needed. This is a scala feature. 
+Scala supports lazy computation. It increases performance of our program. 
+Streams have the same performance characteristics as lists
+
+In scala a List can be constructed with :: operator, 
+whereas a Stream can be constructed with the #:: operator method, using Stream.empty at the end of the expression.
+
+val 1 = 100 #:: 200#:: 300#:: Stream.empty
+
+Output = Stream(100, ?)
+
+In the above output, we can see that second element is not evaluated. 
+Here, a question mark is displayed in place of element. 
+Scala does not evaluate list until it is required. 
+The tail is not printed, because it hasn’t been computed yet. 
+Streams are specified to lazy computation.
+
+
+ofDim
+=====
+
+is used to create a multi dimentional array
+
+val myarr = Array.ofDim[Int](2,2)
+
+myarr(0)(0) = 2
+myarr(0)(1) = 7
+myarr(1)(0) = 3
+myarr(1)(1) = 4
+
+for (i <- 0 to 1 ; j <- 0 until 2) {
+println(myarr(i)(j))
+}
+
+Output = 
+2
+7
+3
+4
+
+
+DESIGN PATTERNS AND ITS TYPES
+============================
+
+Design pattern is a general reusable solution to a
+commonly occuring problem in software design.
+
+Is is a template for how to solve a problem that can be
+used in many different situations
+
+1. Factory design pattern
+=====================
+
+The main aim of a factory design pattern is that, it
+separates instance creation logic from the client.
+
+we implement instance creation logic in a factory class
+without exposing the logic to the client.
+
+separates instance creation logic from the client.
+
+it is used when we have a super class with multiple sub
+classes and based on input, we need to return one of
+the sub-class.
+
+Benefits of a factory design pattern:
+
+1. offers loose coupling between object creation and the client.(client is not bound to how object creation happens 
+that is taken care inside the apply method client just mentions the parameters.)
+2. clear separation of responsibilities.
+3. easy to change object creation logic without effecting client program.( you can change anything in the apply method without disturbing the client call)
+
+
+Example
+=======
+
+object MyFourth {
+
+trait Computer {
+def ram: String
+def hdd: String
+def cpu: String
+}
+case class PC(ram: String, hdd: String, cpu: String) extends Computer 
+case class LAPTOP(ram: String, hdd: String, cpu: String) extends Computer 
+
+//Factory design which is hidden from client.
+//you create the instance of the class inside this method so that things become easy to the client.
+
+object ComputerFactory {
+
+def apply(compType: String, ram: String, hdd: String, cpu: String) = compType match{ case "PC" => PC(ram, hdd, cpu)
+
+case "LAPTOP" => LAPTOP(ram, hdd, cpu)
+
+}
+//customer will directly call this method easily.
+
+ComputerFactory("PC", "16gb", "1tb", "2.3gz") 
+ComputerFactory("LAPTOP", "16gb", "1tb", "2.3gz")
+
+}
+
+2. Singleton design pattern
+======================
+
+The singleton pattern restricts the instantiation of a class to one object, and provides a global point of
+access to it.
+
+object Student {
+//class level functionality
+}
+
+
+3. Lazy initialization
+================
+
+it’s a technique that initializes a value on its first access.
+
+Lazy initialization allows to defer (or avoid) some expensive computation.
+
+lazy val x = {
+println(“computing x”)
+42
+}
+
+Difference between Array and ArrayBuffer in Scala.
+==========================================
+
+Both Array and ArrayBuffer are mutable.
+
+ArrayBuffer is resizable but Array isn’t.
+
+If you append an element to an ArrayBuffer, it gets larger.
+
+If you try to append an element in Array it will internally create a new Array
+
+Example
+========
+import.scala.collection.mutable.ArrayBuffer
+
+After importing this you can create ArrayBuffer
+
+val a = ArrayBuffer(1,2,3,4)
+
+a += 5
+a.type = ArrayBuffer(1,2,3,4,5) = It will get added.
+
+a.appedn(6)
+a.type = ArrayBuffer(1,2,3,4,5,6)
+
+Array cannot do this.
+
+
+How to remove duplicates from an array or List
+======================================
+1.
+
+val 1  = Array(1,2,3,4,4)
+
+You can convert it to set bcz set cannot hold duplicates.
+
+a.toSet
+
+If you want Array only then = a.toSet.toArray
+
+2.
+
+a.distinct
+
+Same with the list.
+
+
+
+
+
+
+
+
+

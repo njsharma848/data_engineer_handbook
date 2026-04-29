@@ -1,0 +1,609 @@
+ORC FILE FORMAT
+===============
+
+CREATE TABLE orders_orc(
+id bigint,
+product_id string,
+customer_id bigint,
+quantity int, 
+amount double)
+stored as orc;
+
+describe formatted orders_orc;
+
+SerDe Library: org.apache.hadoop.hive.ql.io.orc.OrcSerde                  
+InputFormat: org.apache.hadoop.hive.ql.io.orc.OrcInputFormat                      
+OutputFormat: org.apache.hadoop.hive.ql.io.orc.OrcOutputFormat   
+
+This will give you details of the file format as above.
+
+insert into orders_orc select * from orders;
+
+To see Data in Hdfs
+
+hadoop fs -ls /user/hive/warehouse/trendy.db/orders_orc
+_
+hadoop fs -cat /user/hive/warehouse/trendy.db/orders_orc/*  --> The file is stored in binary format we can't read that.
+
+
+
+To get detailed information about orc file, use ORCFILEDUMP Command.
+
+Stripes,encoding,Compression used
+hive --orcfiledump /user/hive/warehouse/trendy.db/orders_orc/000000_0
+
+To display data in ORCFILE Use,
+
+hive --orcfiledump -d /user/hive/warehouse/trendy.db/orders_orc/000000_0
+
+
+PARQUET FILE FORMAT
+==================
+
+CREATE TABLE orders_parquet(
+id bigint,
+product_id string,
+customer_id bigint,
+quantity int, 
+amount double)
+stored as parquet;
+
+insert into orders_parquet select * from orders;
+
+hadoop fs -cat /user/hive/warehouse/trendy.db/orders_orc/*  --> The file is stored in binary format we can't read that.
+ 
+To see Metadata use command
+
+parquet-tools meta 000000_0
+
+To see Actual Data
+
+parquet-tools cat 000000_0
+
+
+JSON FILE FORMAT
+===============
+
+There is no inbuilt support for json if you want to use it then you need to use class.
+
+if we want to use json format then we have to use json serde
+
+serde
+
+ser + de
+
+Serialization + Deserialization
+
+Serialization - Serialization is converting data to a form which can be transferred over a network and then stored in a file.
+
+Converting from objects to bytes which can be transferred over the network. 
+
+Deserialization - Deserialization is converting the data from a form that can be sent over the network into a form which can be read.
+
+In case of java converting from bytes to object.
+
+When sending and storing the data hive converts it toa form which is feasible for this.
+It is stored as row.
+
+When reading it ,it tries to break it in which it can understand.
+It breakes into column.
+
+Download the Jar
+
+www.congiu.net/hive-json-serde/1.3.7/cdh5/json-serde-1.3.7-jar-with-dependencies.jar
+
+Add the Jar in Hive
+
+add jar ( path of the jar )
+
+Create Table
+
+CREATE TABLE orders_json(
+id bigint,
+product_id string,
+customer_id bigint,
+quantity int, 
+amount double) ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe';
+
+File format is text but inside that we are using JSON SERDE.
+
+insert into orders_json select * from orders;
+
+To see all the details related to table use
+
+show create table orders_json;
+
+
+SNAPPY - LZO - GZIP -BZIP2
+======================
+
+
+SNAPPY - optimized for speed rather than storage not splittable.
+
+LZO optimized for speed rather than storage splittable
+
+GZIP - optimized for storage rather than speed, in terms of storage it is 2.5 times better than snappy however 2 time slower than snappy in terms of speed. Not splittable
+
+BZIP2 highly optimized for storage, but very very slow, can be 10 times slower than gzip. Splittable
+
+
+VECTORIZATION
+==============
+
+To use vectorized query execution, you must store your data in ORC format.
+
+set the following property.
+======================
+
+set.hive.vectorized.execution.enabled = true;
+
+Vectorized Execution is off by default.
+
+Vectorized Execution
+=================
+
+create table vectorizedtable ( 
+state string , id int )
+stored as orc;
+
+insert into vectorizedtable values ( 'maharashtra',1);
+
+set hive.vectorized.execution.enabled = true;
+
+explain select count(*) from vectorizedtable;
+
+Execution mode: vectorized
+
+CHANGING THE HIVE ENGINE
+=========================
+
+1. MapReduce
+2. Tez
+3. Spark
+
+To change the Hive Engine use the following property.
+
+set hive.execution.engine=spark;
+
+MSCK REPAIR COMMAND
+=====================
+
+CREATE TABLE external table orders_w_partitions(
+id bigint,
+product_id string,
+customer_id bigint,
+quantity int, 
+amount double)
+partitioned by (state char(2))
+row format delimited
+fields terminated by','
+location '/data';
+
+Someone created the partitions in HDFS.
+
+hadoop fs -mkdir /data/orders=CA
+hadoop fs -mkdir /data/orders=NJ
+
+show partitions orders_w_partitions; --> HIVE
+
+You will not be able to see any partition.
+
+msck repair table orders_w_partitions; 
+show partitions orders_w_partitions;
+
+Using msck repair command we are able to add the hive metadata which was missing.
+
+
+
+
+
+
+
+FEW THINGS GOOD TO KNOW IN HIVE
+
+
+1. ENABLE NO DROP FEATURE
+=======================
+
+If you want to protect some table which is very crucial for businees from getting drop then we should use enable no drop feature.
+so that even if someone tries to drop that it will show an error.
+
+If we enable no_drop on table then table cant be dropped.
+
+alter table (table name) enable no_drop;
+ 
+drop table employee; --> It will show an error (Table orders is protected from being dropped)
+
+DISABLE NO DROP FEATURE
+=======================
+
+After your work is done now if you want to drop that important table then you need disable the no_drop feature.
+
+alter table (table name) disable no_drop;
+
+drop table employee; --> It will get dropped now.
+
+2. ENABLING NO DROP ON PARTICULAR PARTITION
+========================================
+
+alter table products_partitioned_buckets partition (category='fashion') enable no_drop;
+
+If you apply on this and try to drop entire table.
+It will show an error (Table products_partitioned_buckets Partitioncategory=fashion is protected from being dropped).
+You have to delete the other partitions individually.
+
+ENABLE/DISABLE OFFLINE FEATURE IN HIVE
+====================================
+
+If you want restrict a table from being queried then you can enable enable offline feature.
+
+alter table orders enable offline;
+
+alter table orders disable offline;
+
+3. SKIPPING HEADERS WHEN LOADING DATA
+===================================
+
+so,consider in the data file that we are getting, in that first n rows are some
+random data that we do not want to consider.
+
+create table skip_test(
+name string,
+score int)
+row format delimited
+fields terminated by','
+lines terminated by '/n'
+stored as textfile
+tblproperties("skip.header.line.count"="3");
+
+load data local inpath '/home/cloudera/Desktop/shared1/dataset/skip_test.csv' into table skip_test;
+select * from skip_test; --> you will see first 3 rows will not get inserted.
+
+Similary you can do it for Putter rows : "skip.putter.line.count"="3"
+
+4. MAKING TABLE IMMUTABLE
+=======================
+
+IMMUTABLE - We cannot change it.
+
+This will allow us to load the data for first time only.
+and then we cannot append any new data and also we cannot do any modification.
+However we can still overwrite the table.
+
+tblproperties("immutable"="true");
+
+5. DROP VS TRUNCATE VS PURGE
+===========================
+DROP -
+when we drop a managed table both the data and metadata will be deleted.
+when we drop a external table then only the metadata is deleted. Data is not touched.
+
+TRUNCATE -
+In truncate all the data is deleted. metadata will still be there.
+
+PURGE -
+If purge is set to true, and if we delete the data the date is permanently gone,it will not go to trash.
+But if purge is set to false then we can recover the data,it will go to trash.
+Hadoop admins will help us with recovering the data.
+
+tblproperties("auto.purge"="true");
+
+6. TREATING EMPTY STRINGS AS NULL
+=============================
+
+If the data is stored in a file and there is no value for (string) particular field.
+So,whenever value is missing it is blank and not null.
+What if we want to show them in our table as NULL.
+
+tblproperties("serialization.null.format"="");
+
+create table sparse_test(
+name string,
+score int)
+row format delimited
+fields terminated by','
+lines terminated by '/n'
+stored as textfile
+tblproperties("serialization.null.format"="");
+
+load data local inpath '/home/cloudera/Desktop/shared1/dataset/sparse_test.csv' into table sparse_test;
+
+select * from sparse_test;
+
+7. RUN HDFS COMMAND FROM HIVE
+=============================
+
+Normal Command in HDFS --> hadoop fs -ls /user/cloudera
+
+Same HDFS command from HIVE --> dfs -ls /user/cloudera
+
+
+8. RUN LINUX COMMAND FROM HIVE
+=============================
+
+Normal Command in Linux --> ls -ltr /home/cloudera/desktop
+
+Same Linux Command from HIVE --> !ls -ltr /home/cloudera/desktop
+
+
+9. SETTING HIVE VARRIABLE
+=======================
+
+We can set the value of hive variables and use the value dynamically in our query.
+
+For e.g
+in our table there is customer_id 123456 and we want to query based on that like,
+select * from customers where customer_id = 123456;
+
+so instead of 123456 we can use HIVE Variable.
+
+set hivevar:favourite_customer=123456;
+
+select * from customers where customer_id = ${favourite_customer};
+
+So 123456 is replaced with ${favourite_customer}
+
+
+10. PRINTING HEADERS ALONG WITH THE DATA
+=======================================
+
+By default headers are not shown as print.header property is set to false by default.
+
+set hive.cli.print.header;
+set hive.cli.print.header=true;
+
+11.CARTESIAN PRODUCT
+====================
+
+This is like cross join.
+
+select * from table1,table2
+
+table1 with 100 rows
+table2 with 200 rows
+The resulting cartesian join will give 100*200 = 20000 rows.
+
+
+OPTIMIZATIONS RECAP
+====================
+
+1. Partitioning 
+
+Works by dividing the data into smaller segments. These segments are created using logical groupings.
+For example state can be the column on which partitioning can be done. We finally scan only one partition and avoid scanning the other partitions.
+This gives lot of performance gains.
+We can do partitioning on columns where we have less number of distinct values.
+
+2. Bucketing 
+
+Works also by dividing the data into smaller segments. These segments are created based on system defined hash functions.
+For example productid, customerid can be the columns on which we can do bucketing.
+We finally scan only one bucket and avoid scanning the other buckets. This gives lot of performance gains. I
+We can do bucketing on columns where we have large number of distinct values.
+
+3. Join optimizations techniques
+
+Map side join, Bucket Map Join, Sort Merge Bucket Join also called as SMB join.
+
+4. Vectorization 
+
+Vectorization improves the performance by fetching 1,024 rows in a single operation instead of
+fetching single row each time. It improves the performance for operations like filter, join, aggregation, etc.
+
+5. Changing the execution engine to Tez or Spark as mapreduce is quite slow.
+
+6. Use Orc file format with a compression like snappy.
+
+Orc provides highly efficient ways of storing the hive data by reducing the
+data storage format by 75% of the original.It uses techniques like predicate push-down, compression, and more to improve the performance of the query.
+(predicate push-down means filtered are performed earlier at storage level)
+Snappy provides a fast compression.
+
+7. UDF's are not very optimized.
+
+filters operations are evaluated left-to-right, so for best performance, 
+put UDFs on the right in an ANDed list of expressions in the WHERE clause.
+
+Put you UDF in the end of Where Clause.
+So,whatever expression is there on left side is validated first and will give you lesser results so your UDF has work on smaller dataset not on bigger dataset.
+Beacuse UDFs are not optimized and you do not want your UDF to play with large data bcz it will take too much of time.
+System defined functions are optimized so your first intention should be to use those first and when dataset is less then your UDF should play into picture.
+
+E.g., use
+column1 = 10 and myUDF(column2) = "x"
+instead of myUDF(column2): = "x" and column1 = 10
+
+8. Cost-based optimization
+
+CBO in Hive is powered by Apache Calcite (http://calcite.apache.org/), which is an open source, 
+enterprise-grade cost-based logical optimizer and query execution framework. I
+Hive CBO generates efficient execution plans by examining the query cost, 
+which is collected by ANALYZE statements, ultimately cutting down on query execution time and reducing resource utilization.
+
+To use CBO, set the following properties:
+
+SET hive.cbo.enable=true; -- default true after v0.14.0
+SET hive.compute.query.using.stats=true; -- default false
+SET hive.stats.fetch.column.stats=true; -- default false
+SET hive.stats.fetch.partition.stats=true; -- default true
+
+I However we do not have to worry. This will be configured at cluster level and as a developer we do not have to do anything.
+
+The below link can help DBA's to understand internals of it
+https://docs.cloudera.com/HDPDocuments/HDP2/HDP-2.6.5/bk_hive-perfor mance-tuning/content/ch_cost-based-optimizer.html
+
+Text file format is not considered suitable for production, reason being:
+
+1. Overhead of type-conversion
+2. File size can become bulky
+3. Bytes transferred over network are more
+
+What is the importance of surrogate keys in Hive?
+
+Ans: ​Surrogate key is a column or combination of column set as primary key instead of 
+real ones whenever real ones are not possible due to some reason
+...thus it helps to implement aprimary key for the table
+
+What is Nested Data?
+
+Nested data structure means a tree like structure, where some data that is nested or fully-contained within something
+Data Nesting refers to the process of storing data using a nested structure. 
+This type of structure for data is commonly used in document-based databases and data formats such as JSON file format. 
+It differs from traditional data warehouses, which generally store data in tabular form.
+In general, we can define Data Nesting as data that contains an unlimited number of observations under a single key, 
+which can also be nested within a higher structure composed of multiple but not necessarily equal numbers of observations each.
+
+Like the above code skip headers property is applied. But I wanted to know if we can apply more than one tbl properties while creating a new table.
+Ans : Yes more than one table properties can be used while creating a hive table.Example:tblproperties("skip.header.line.count"="1", "skip.footer.line.count"="1"
+
+Indexes are not supported from 3.0 and also not recommended.
+
+Which is the compatible platform for Avro file format?
+
+Ans:- Avro formats commonly used in kafka and in landing zone where the files are loadeddirectly from source
+
+ Is it possible to directly load data from a .CSV file stored inHDFS to an optimized table with partitions buckets and orc fileformat.
+In video I saw initially we are creating a raw table on top of.CSV and then loading data to another table which is optimised (having orc file format) 
+
+Ans :- When we load the data from the HDFS to the hive table using load command then it isjust like cutting and pasting the data. 
+Then how would hive know which partition or bucket it is.( except only static partitioning where we explicitly mention which partition this file to go)
+That's why first we need to impose the basic structure on top of the file so that hive knows
+ which column a particular value in a record in that file belongs to so that it can partition orbucket it in the opt table
+
+
+SCD (SLOWLY CHANGING DIMENSION)
+================================
+
+Also called as Change Data Capture.
+consider you have a table in mysql with lot of columns ( dimension tables).
+the data might not change that frequently.
+consider that we got all of this data to hdfs during the first load.
+
+using sqoop you first get the data from mysql table to hdfs
+in hdfs the data will be in the form of files.
+then you will create a hive table on top of this data. 
+
+Now what if the data in mysql table changes, however the changes are not that frequent.
+Then how to make sure our hive table gets synced with the mysql table. 
+and for doing this we talk about SCD concept.
+
+USE CASE
+========
+
+1. For example you may want to track full history in a table, allowing you to track the evolution of a customer over time.
+
+2. In other cases you don't care about history but need an easy way to synchronize reporting systems with source operational databases.
+
+Types of SCD (Change Data Capture)
+==============================
+
+SCD Type 1 -
+
+We have to sync the hive table to make sure the data is latest. 
+We do not want to maintain history of previous data.
+Overwrite old data with new data. 
+The advantage of this approach is that it is extremely simple, 
+and is used any time you want an easy way to synchronize reporting systems with operational systems. 
+The disadvantage is you lose history any time you do an update.
+
+SCD Type 2 -
+
+We want to maintain the history as well.
+Add new rows with version history. 
+The advantage of this approach is that it allows you to track full history. 
+The disadvantage is that your dimension tables grow without limit and may become very large.
+When you use Type 2 SCD you will also usually need to create additional reporting views to simplify the process of seeing only the latest dimension values.
+
+Operational or Transactional systems = RDBMS like Mysql or Oracle
+Reporting or Analytical systems = Hive
+
+STEPS TO IMPLEMENT SED TYPE 1
+============================
+
+Only Updates and Inserts.
+
+1. If a new row comes which is there in table3 and not in table2
+then we need to have this row in table2 also.(INSERT)
+2. If a row is there in both table3 and table2 but in table3 it is updated 
+then your table2 row should also be updated.(UPDATE)
+3. If a row is there in table2 and not there in table3 
+then in that case you should have the same row as table2.(SAME)
+
+table 3 = new
+table 2 = old
+
+Let us first create the two tables: table2, table3
+
+We want to sync the table2 based on changes in table3
+
+create table table2 (coll String, col2 int) row format delimited fields terminated by",";
+create table table3 (coll String, col2 int) row format delimited fields terminated by",";
+
+Then load the data.
+
+Query for implementation of SCD Type 1
+=================================
+
+case when 
+cdc_codes ='Update' Then table3s 
+when cdc_codes = 'NoChange' then table2s
+when cdc codes = 'New' then table3s
+when cdc_codes = 'Deletes' then table2s
+end
+from 
+( 
+select case when 
+table2.col1=table3.col1 and table2.col2=table3.col2 then 'NoChange'
+when table2.col1=table3.col1 and table2.col2<>table3.col2 then 'Update'
+when table2.col1 is null then 'New' 
+when table3.col1 is null then 'Deletes'
+end as cdc_codes,
+concat(table2.col1,',', table2.col2) as table2s, 
+concat(table3.col1,',', table3.col2) as table3s 
+from table2
+full outer join table3 on table2.col1-table3.col1) as bl
+
+Output of Inner query
+
+cdc_codes    table2s   table3s
+NoChange, "mark, 1000", "mark, 1000"
+New, null, "Lio, 500"
+Deletes, "jack, 700", null
+Update, "john, 1300", "john, 1900"
+
+Output of total query
+
+There will be one single output table with all the latest information about inserts and updates.
+In this case we will override old data with new data.
+
+IMPLEMENTATION OF SCD TYPE 2
+=============================
+
+1. Versioning (still good)
+
+In versioning method, a sequence number is used to represent the change. 
+The latest sequence number always represents the current row and the previous sequence numbers represents the past data.
+
+2. Flagging (we lose some of the data)
+
+In flagging method, a flag column is created in the table. 
+The current record will have the flag value as 1 and the previous records will have the flag as 0.
+
+3.Effective Date (most used)
+
+In Effective Date method, the period of the change is tracked using the start_date and end_date columns in the dimension table. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

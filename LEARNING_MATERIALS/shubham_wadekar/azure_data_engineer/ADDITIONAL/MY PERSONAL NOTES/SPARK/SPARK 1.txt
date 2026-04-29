@@ -1,0 +1,1336 @@
+What is Apache Spark
+==================
+Spark provides an interface for programming clusters with implicit data parallelism and fault tolerance. 
+It enables developers to write applications in various programming languages, such as Scala, Java, Python, and R, using a high-level API. 
+Spark's main featform in-memure is its ability to perory processing, 
+which can significantly speed up data processing tasks compared to traditional disk-based processing systems.
+
+Key features of Apache Spark include:
+==============================
+Resilient Distributed Datasets (RDDs): RDDs are the fundamental data structure in Spark, representing immutable, distributed collections 
+of data that can be processed in parallel across a cluster. RDDs offer fault tolerance and can be cached in memory for faster processing.
+
+Transformations and Actions: Spark provides a set of operations for transforming and processing RDDs. 
+Transformations are operations that create a new RDD from an existing one (e.g., map, filter, reduceByKey), 
+while actions are operations that trigger computation and return values to the driver program (e.g., count, collect, saveAsTextFile).
+
+In-Memory Processing: Spark allows data to be stored in memory, reducing the need for repetitive disk I/O and accelerating data processing tasks.
+
+Support for Various Data Sources: Spark supports reading and writing data from various data sources, including Hadoop Distributed File System (HDFS), 
+Apache Cassandra, Apache HBase, JSON, Parquet, and more.
+
+Advanced Analytics: Spark provides libraries for performing advanced analytics tasks, 
+such as Spark SQL for querying structured data using SQL-like queries, MLlib for machine learning, 
+GraphX for graph processing, and Spark Streaming for processing real-time data streams.
+
+Ease of Use: Spark offers high-level APIs in multiple programming languages, making it accessible to a wide range of developers.
+
+Cluster Management: Spark can be integrated with various cluster managers, such as Apache Hadoop YARN, 
+Apache Mesos, or it can also run in standalone mode.
+
+Spark is plug and play compute engine meaning?
+=======================================
+"Plug and play" typically refers to a technology or system that is designed to be easily integrated or connected with other components without requiring 
+complex configurations or extensive setup. 
+In the context of a compute engine like Apache Spark, calling it a "plug and play compute engine" could suggest that 
+Spark is relatively easy to set up, configure, and integrate into existing data processing pipelines or systems.
+
+Hive vs Spark
+===========
+
+Apache Hive is a data warehousing and SQL-like query language system built on top of Hadoop. 
+It provides a high-level abstraction over Hadoop's MapReduce framework, allowing users to query and 
+analyze large datasets using a SQL-like language called HiveQL. 
+
+Hive translates these queries into MapReduce jobs, making it easier for users familiar with SQL to work with big data without needing to
+ write complex MapReduce code.
+
+While Apache Hive and Apache Spark are both used for big data processing, they serve different purposes and have different strengths. 
+Here's how Hive and Spark relate to each other:
+
+1. Data Warehousing vs. General-Purpose Processing: 
+Hive is primarily designed for data warehousing and querying large datasets using SQL-like queries. It's well-suited for batch-oriented, 
+OLAP-style (Online Analytical Processing) workloads. 
+Spark, on the other hand, is a general-purpose distributed computing framework that supports batch processing, 
+iterative algorithms, interactive queries, and real-time streaming processing.
+
+2. Query Language: Hive uses HiveQL, a SQL-like query language, to perform data analysis. 
+Users familiar with SQL can leverage their skills to work with Hive. 
+Spark also provides a SQL module called Spark SQL, which allows you to execute SQL queries on Spark data. 
+Spark SQL can also read data from Hive tables and perform operations on them.
+
+3. Processing Engine: Hive generates MapReduce jobs to execute queries, which makes it efficient for certain types of data warehousing workloads. 
+However, Spark provides its own processing engine that can be more versatile and efficient for a wider range of processing tasks, 
+including machine learning, graph processing, and real-time streaming.
+
+4. Performance: Spark's in-memory processing capabilities can result in significantly faster query execution times compared to Hive, 
+especially for iterative algorithms and interactive queries.
+
+5. Ease of Use: Hive abstracts away much of the complexity of writing low-level MapReduce code, 
+making it easier for SQL users to work with big data. However, Spark's high-level APIs and 
+interactive shell also provide an easy and intuitive interface for various data processing tasks.
+
+6. Integration: Hive can be integrated with Spark. You can use the Spark SQL module to query and manipulate data stored in Hive tables. 
+This allows you to take advantage of Hive's data warehousing capabilities while also benefiting from Spark's computational power.
+
+RDD in detail
+===========
+RDD stands for Resilient Distributed Dataset, and it is a fundamental data structure in Apache Spark. 
+RDDs provide an abstraction for distributed data processing, allowing Spark to perform parallel computations across a cluster of machines. 
+RDDs offer fault tolerance and can be stored in memory, which contributes to Spark's performance advantages over traditional disk-based processing systems.
+
+Here are the key characteristics and properties of RDDs:
+
+Resilient: RDDs are resilient because they can recover from node failures. 
+This resilience is achieved through lineage information, which keeps track of the transformations applied to the original data to reconstruct lost partitions.
+
+Distributed: RDDs are distributed collections of data that are partitioned across nodes in a cluster. 
+and it is distrubuted in memory rathar than disk.
+Each partition contains a subset of the data, and computations can be performed on these partitions in parallel.
+
+Immutable: RDDs are immutable, meaning that once created, they cannot be changed. 
+You can create new RDDs through transformations applied to existing RDDs, but the original RDD remains unchanged.
+
+Lazily Evaluated: Transformations on RDDs are lazily evaluated, meaning that they are not executed immediately when called. 
+Instead, they are recorded in the lineage graph. This allows Spark to optimize the execution plan before actually performing computations.
+
+Caching: RDDs can be cached in memory, allowing for faster access to the data. Caching is particularly useful 
+for iterative algorithms or when multiple actions need to be performed on the same data.
+
+Partitioning: RDDs can be partitioned into smaller units of data that are processed in parallel across the cluster. 
+The number of partitions affects the degree of parallelism and resource utilization.
+
+Data Transformation: Transformations are operations applied to RDDs to create new RDDs. 
+Common transformations include map, filter, reduceByKey, and join.
+
+Actions: Actions are operations that trigger the execution of computations and return results to the driver program or 
+store data to an external storage system. Common actions include count, collect, saveAsTextFile, and reduce.
+
+Language Independence: RDDs can be created and manipulated using various programming languages, including Scala, Java, Python, and R.
+
+WORD COUNT PROGRAM (SCALA) IN spark-shell Terminal
+===============================================
+gedit file1 (write some lines in file) and save it.It will get saved in local.
+
+Create a directory in Hadoop
+hadoop fs -mkdir /user/cloudera/sparkinput
+
+hadoop fs -put file1 /user/cloudera/sparkinput
+
+
+Interactive way of writing the code
+============================
+1. To connect to spark(Scala) = spark-shell 
+
+2. To connect to spark(Python) = pyspark
+
+3. In java it is not supported we have to write code in IDE and then run it.
+
+Default version of spark in cloudera 1.6.0
+
+
+SC
+===
+Spark context available as sc (master = local[*], app id = local-1669640352770).
+SC is nothing but the spark context.
+and it is the entry point to spark cluster.
+Mentioning SC means we do not want to run the code in local machine but across spark cluster so that we get parallelism.
+
+In Apache Spark, a SparkContext is the entry point and central controller for creating and managing Spark operations in your code. 
+It is the fundamental interface between your Spark application and the underlying Spark cluster.
+
+The SparkContext provides several important functions and services to your Spark application:
+============================================================================
+Cluster Connection: The SparkContext establishes a connection to the Spark cluster,
+allowing your application to distribute and manage tasks across the cluster's worker nodes.
+
+Resource Management: The SparkContext manages the allocation of resources, such as memory and CPU cores, 
+for your application's tasks within the cluster.
+
+Job Scheduling: The SparkContext handles job scheduling and task execution across the cluster, 
+ensuring that tasks are executed efficiently and in parallel.
+
+Data Access: Through the SparkContext, you can access and process data stored in various data sources, 
+such as HDFS, HBase, Amazon S3, and more.
+
+Logging and Configuration: The SparkContext controls the logging behavior and configuration settings for your Spark application.
+
+
+Que
+====
+We need to find the frequency of each word in a file which resides in hdfs.
+We have craeted a file in local and then moved it to hdfs.
+Now we want to process this file in hdfs using Apache Spark.
+
+
+The basic unit which holds the data in spark is called as rdd 
+We need to load the file in rdd.        
+
+1. val rdd1 = sc.textFile("/user/cloudera/sparkinput/file1")
+
+2. val rdd2 = rdd1.flatMap(x => x.split(" "))
+
+Flatmap basically takes each line as input
+And give output as a individual seperate words.
+It flatens out the structure.
+
+Array(spark, is, very, interesting, spark, is, good, I, hope, you, are, learning, well, spark, is, better, than, mapreduce.)
+
+3. val rdd3 = rdd2.map(x => (x,1))
+
+Array[(String, Int)] = Array((spark,1), (is,1), (very,1), (interesting.,1), (spark,1), 
+(is,1), (good,1), (I,1), (hope,1), (you,1), (are,1), (learning,1), (well.,1), 
+(spark,1), (is,1), (better,1), (than,1), (mapreduce.,1))
+
+In Map no of Input line are equal to no of output line.
+
+4. val rdd4 = rdd3.reduceByKey((x,y) => x+y)
+
+Array[(String, Int)] = Array((are,1), (interesting.,1), (learning,1), (mapreduce.,1), (spark,3), 
+(is,3), (you,1), (than,1), (hope,1), (well.,1), (I,1), (very,1), (good,1), (better,1))
+
+reduceByKey is similar to groupbykey
+reduceByKey always works on two rows at a time.
+
+5. rdd4.collect()
+
+collect is a function which will return the output.
+
+
+SPARK UI
+========
+
+localhost:4040 (this gives you the spark ui) DAG
+
+Browser -> URL -> localhost:4040 -> Yo will see spark jobs(job id) -> 
+Click on job id -> DAG Visualization 
+
+When you exit saprk-shell this UI won't come.
+
+It comes only when you are connected to spark-shell.
+
+
+
+WORD COUNT PROGRAM (PYTHON)
+==============================
+
+rdd1 = sc.textFile("file:///home/cloudera/file1")
+
+rdd2 = rdd1.flatMap(lambda x : x.split(" "))
+
+rdd3 = rdd2.map(lambda x : (x,1))
+
+rdd4 = rdd3.reduceByKey(lambda x,y : x+y)
+
+rdd4.saveAsTextFile("/user/cloudera/sparkoutput")
+
+hadoop fs -cat /user/cloudera/sparkoutput
+
+In production scenarios collect() is not prefferad bcz for large dataset it will show out of memory error.
+It will need to load into memory which is not possible for large dataset.
+
+So we save it as file in Hdfs.(Give new path to save file)
+
+CHANGES
+========
+
+1. Remove val or var
+
+2. In scala we have anonymous functions and same thing is called as lambdas in python.
+
+3. Instead of => write :
+
+4. .saveAsTextFile("<hdfs path>") instead of collect()
+
+5. What if you want to process the file from local?
+
+Syntax(This indicates file resides in local) = file:// 
+
+6. rdd.collect() Brackets are compulsory in python and in scala don't.
+
+
+FINDING THE FREQUENCY OF EACH WORD ( SCALA IDE)
+==============================================
+
+Dataset used for this program is actual dataset from google add campaign of trendytech institute.
+
+Dataset is kept on F:\TRENDYTECH\WEEK 9 SPARK 1\DATASETS SPARK
+
+We will write this program in Eclipse Ide rather than terminal.
+
+IDE = Integrated Development Enviornment.
+
+
+Either write a main method or use extends App
+
+When you were writing code in spark-shell (terminal) then sc was avilable
+But in IDE it is not avilable you have to create your own spark context(sc),
+
+
+We need to import libraries for SparkContext
+
+Click on project name(wordcount) -> Build Path -> Configure Build Path -> Libraries -> Add external jars
+-> S:\Softwares\BIG DATA\spark-2.4.4-bin-hadoop2.7\jars -> Add all the jars -> Apply and close.
+ 
+
+
+We need to check with which version of scala spark is compatible with.
+
+Click on project name(wordcount) -> Scala Compiler -> Use project setting -> Scala Installation -> Select Latest 2.11 bundle (dynamic)
+
+we are working with spark 2.4.4
+This spark version is compatible with 2.11 version of scala.
+
+Spark = 2.4.2 version   Scala = 2.12 version
+Spark = 2.4.3 version   Scala = 2.11 version
+Spark = 2.4.4 version   Scala = 2.11 version
+
+To import relevant libraries or packages click (ctrl+shift+o).
+
+
+Spark is a framework which helps scala code to achieve parallelism and by adding all the jars you are giving this program spark support.
+So this program will run on spark cluster.
+
+
+val sc = new SparkContext("local[*]","wordcount")
+=========================================
+
+sc = just name (you can give it any name)
+
+new SparkContext = Using new keyword we are creating new spark context bcz it is not avilable by default.
+
+It takes two parameters ("local[*]","wordcount")
+
+local = Cluster is on local only.
+
+[*]  = Use all the cpu cores on my local machine.
+
+Cores e.g = quad core processeror,dual core processeror
+
+wordcount = Application name(you can give it any name)
+
+
+CODE(IDE)
+=========
+
+import org.apache.spark.SparkContext
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+
+
+
+object wordcountprogram extends App {
+  
+ Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt")
+  
+ val words = input.flatMap(x => x.split(" "))
+  
+ val wordCount =  words.map(x => (x,1))
+  
+ val finalCount = wordCount.reduceByKey((a,b) => a+b) 
+  
+ finalCount.collect.foreach(println)
+  
+scala.io.StdIn.readLine()
+  }
+
+
+Logger.getLogger("org").setLevel(Level.ERROR) = When you don't want to see bunch of information and only errors.
+
+
+When you are writing the code in ide and you run the program.
+the dag is visible only till the time job is running.
+as soon as the job terminates or finishes the dag wont be visible.
+your admins will setup a history server from where you can see the dag.
+
+scala.io.StdIn.readline() = It will keep the program running so that we can see DAG anytime.
+
+DAG = localhost:4040 ( It will be visible in chrome too)
+
+
+New Question
+============
+Input :
+
+big data training
+
+BIG DATA COURSE
+
+Output :
+
+(big,2)
+(data,2)
+(training,1)
+(course,1)
+
+We want to convert all capital letters into small cap and then perform the action.
+If both are in different cases then it will treat both as different words.
+
+We will use placeholder syntax in this code(less writing)
+
+Normal Code
+===========
+
+object wordcountprogram extends App {
+  
+ Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt")
+  
+ val words = input.flatMap(_.split(" "))
+
+ val wordsLower = words.map(_.toLowerCase())
+
+ val wordCount =  wordsLower.map((_,1))
+  
+ val finalCount = wordCount.reduceByKey(_+_) 
+  
+ finalCount.collect.foreach(println)
+  
+scala.io.StdIn.readLine()
+  }
+
+Changing of functions(Optimization in code)
+=====================================
+
+object wordcountprogram extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+
+val sc = new SparkContext("local[*]","wordcount")
+
+sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt").
+flatMap(_.split(" ")).
+map(_.toLowerCase()).
+map((_,1)).
+reduceByKey(_+_) .
+collect.
+foreach(println)
+  
+scala.io.StdIn.readLine()
+  }
+
+
+Top 10 Words
+============
+
+If I want to find the top 10 words then I should be doing sorting on values.
+
+There is nothing called as sortByValue
+
+But there is a transformation with the name sortByKey
+
+(big,2) -> (2, big) (We will convert key to value and value to key)
+
+Your input is a tuple of 2 elements.
+
+if you want to access the element 1 then you use x._1
+
+x._1 is the key
+x._2 is the value
+
+(x._2,x._1)
+
+sortByKey() = By default it is Asc.
+sortBykey(false) = Now,it will be desc.
+
+Code
+====
+
+object wordcountprogram extends App {
+  
+ Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt")
+  
+ val words = input.flatMap(_.split(" "))
+
+ val wordsLower = words.map(_.toLowerCase())
+
+ val wordCount =  wordsLower.map((_,1))
+  
+ val finalCount = wordCount.reduceByKey(_+_) 
+
+ val reversedTuple = finalCount.map(x => (x._2,x._1))
+
+ val sortedResults = reversedTuple.sortByKey(false).map(x => (x._2,x._1))
+  
+ val results = sortedResults .collect.foreach(println)
+  
+for (result <- results) {
+val word = result._1
+val count = result._2
+println(s"$word : $count")
+     } 
+ scala.io.StdIn.readLine()
+ }
+
+Output
+======
+
+(data,361)
+(big,285)
+(in,171)
+(training,114)
+(course,105)
+(hadoop,100)
+(online,58)
+(courses,53)
+(spark,42)
+(bangalore,40)
+(analytics,35)
+(hyderabad,33)
+.
+.
+
+Alternative Way (Optimized Way)
+===========================
+
+object wordcountprogram extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+  val sc = new SparkContext("local[*]","wordcount")
+  val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt")
+  val words = input.flatMap(_.split(" "))
+  val wordsLower = words.map(_.toLowerCase())
+  val wordCount =  wordsLower.map((_,1))
+  val finalCount = wordCount.reduceByKey(_+_) 
+  val sortedResults = finalCount.sortBy(x => x._2)
+  val results = sortedResults .collect.foreach(println)
+  
+for (result <- results) {
+val word = result._1
+val count = result._2
+println(s"$word : $count")
+     } 
+ scala.io.StdIn.readLine()
+ }
+
+In sortByKey you nedded to reverse the key value and then do the sorting
+But in sort by you dont need to do it you will directly get the output by mentioning the column on which you want 
+do sorting (value in our case)
+
+
+
+SESSION 4
+=========
+
+Intention of the big data system is not give final answer always but to give you
+an answer from which you yourself can use the traditional system to get the answer.
+
+The idea of big data is to get the data in managable form.
+
+
+We need to find out top 10 customers who spent the maximum amount
+==========================================================
+
+customer_id , product_id, amount_spent
+
+Logic
+=====
+
+STEP 1 = We don't need second column in this case bcz amount is what matters most to us.
+                 So we need to get rid of second column.
+
+44,8602,37.19         44,37.19
+35,5368,65.89         35,65.89
+2,3391,40.64           2,40.64
+
+x 44,8602,37.19
+x.split(",")
+
+You will get the array from this.44 will be 0th element and 37.19 will 2nd element of array.
+
+whenever rdd contains tuple of 2 elements it is called as a pair rdd.
+here the 1st element can be treated like key and second element can be treated like value.
+
+No of input and output rows are same so we can use map transformation.
+
+STEP 2 = reduceByKey will be applied for aggregation purpose.
+
+STEP 3 = sortBy(x => x._2)
+
+STEP 4 = collect
+
+Diff between local variable and rdd
+
+local variable seats on your machine.Rdd is like a cluster seating on many machines.
+so when you say collect it collects all the results and give it to you on your local machine from which you executed the program.
+
+CODE
+=====
+
+import org.apache.spark.SparkContext
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+
+object totalspent extends App {
+  
+ Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/customerorders.csv")
+  
+ val mappedInput = input.map(x => (x.split(",")(0),x.split(",")(2).toFloat))
+
+ val totalByCustomer = mappedInput.reduceByKey((x,y) => x+y) 
+
+ val sortedResults = totalByCustomer.sortBy(x => x._2)
+  
+ val result = sortedResults.collect
+  
+ result.foreach(println)
+ 
+}
+
+OUTPUT
+========
+
+(59,5642.8906)
+(42,5696.8403)
+(46,5963.111)
+(97,5977.1895)
+(2,5994.591)
+(71,5995.66)
+(54,6065.39)
+(39,6193.1104)
+(73,6206.199)
+(68,6375.45)
+
+
+SESSION 5
+========
+
+user_id   movie_id   rating_given   timestamp
+
+how many times movies were rated 5 star
+how many times movies were rated 4 star
+how many times movies were rated 3 star
+how many times movies were rated 2 star
+how many times movies were rated 1 star
+
+val mappedInput = input.map(x => x.split("\t")(2))
+
+No of input line = No of output line so, map t.
+
+3
+3
+1
+2
+1
+3
+2
+4
+
+We only get the third column which we are intersted in in the form of array.
+
+Now, 
+
+(3,1)
+(3,1)
+(1,1)
+(2,1)
+(1,1)
+
+We want this kind of ouput so that we can do aggregation.No of input line = No of output line 
+So,we will use map transformation. 
+
+CODE 1
+======
+
+import org.apache.spark.SparkContext
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+
+
+object RatingsCalculator extends App {
+  
+  Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/moviedata.txt")
+
+ val mappedInput = input.map(x => x.split("\t")(2))
+
+ val ratings = mappedInput.map(x => (x,1))
+
+ val ratings1 = ratings.reduceByKey((x,y) => (x+y))
+
+ val results = ratings1.collect
+ 
+  results.foreach(println)
+
+}
+
+CODE 2
+=======
+
+object RatingsCalculator extends App {
+  
+ Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/moviedata.txt")
+
+ val mappedInput = input.map(x => x.split("\t")(2))
+ 
+ val results = mappedInput.countByValue
+ 
+ results.foreach(println)
+
+}
+
+
+Explianation
+===========
+
+instead of using map where we say (x,1) and doing reduceByKey later.
+We can use countByValue
+
+map + reduceByKey is a tranformation -> rdd
+
+countByValue is an action -> local variable
+
+After the action(local variable) you can no longer achieve parallelism.
+
+So if you feel that countByValue is the last thing you are
+doing and there are no more operations after that then it's
+ok to have countByValue.
+
+But if we feel that we need more operations after this then
+we should not use countByValue because we wont get parallelism.
+
+
+SESSION 6
+========
+
+row_id,   name,   age,   number_of_connections
+
+we need to find average number of connections for each age
+
+33 , 100
+33 , 200
+33, 300
+
+output 33,200
+
+42, 200
+42, 400
+42, 500
+42 ,700
+
+output 42, 450
+
+Input
+(33,100)
+(33,200)
+(33,300)
+
+x._1 = 33
+x._2 = 100
+
+Output
+(33,(100,1))
+(33,(200,1))
+(33,(300,1))
+
+mappedInput.map(x => (x._1,(x._2,1)))
+
+
+Input
+
+x = (33,(100,1))
+y = (33,(200,1))
+      (33,(300,1))
+
+
+x._2 = (100,1)
+x._2._1 = 100
+
+So whenever we are dealing with reduceByKey we only deal with values.
+x = (100,1)
+y = (200,1)
+
+x._1 = 100
+y._1 = 200
+x._2 = 1
+y._2 = 1
+
+Output
+
+(33,(600,3))
+
+reduceByKey((x,y) => (x._1 + y._1 , x._2 + y._2))
+
+
+
+Input 
+
+(33,(600,3))
+(34,(800,4))
+
+Output
+
+(33,200)
+(34,200)
+
+val finalOutput = aggreagtion.map(x => (x._1,x._2._1/x._2._2))
+
+
+CODE
+=====
+
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkContext
+
+object RatingsCalculator extends App {
+  
+    def parseLine(line:String) = {
+    val fields = line.split(",")
+    val age = fields(2).toInt
+    val numFriends = fields(3).toInt
+    (age,numFriends)
+}
+ Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/friendsdata.csv")
+
+ val mappedInput = input.map(parseLine)
+
+val mappedFinal = mappedInput.map(x => (x._1,(x._2,1)))
+
+val totalsByAge = mappedFinal.reduceByKey((x,y) => (x._1 + y._1 , x._2 + y._2))
+
+val averagesByAge = totalsByAge.map(x => (x._1,x._2._1/x._2._2)).sortBy(x => x._2)
+
+averagesByAge.collect.foreach(println)
+}
+
+
+
+Input (33,100)
+output(33,(100,1))
+
+mapValues directly treats the values,it don't consider keys as they are same.
+
+//val mappedFinal = mappedInput.map(x => (x._1,(x._2,1)))
+ 
+ val mappedFinal = mappedInput.mapValues(x => (x,1))
+
+
+Input (33,(600,3))
+
+Output (33,200)
+
+//val averagesByAge = totalsByAge.map(x => (x._1,x._2._1/x._2._2)).sortBy(x => x._2)
+
+val averagesByAge = totalsByAge.mapValues(x => (x._1/x._2).sortBy(x => x._2)
+
+
+
+
+PYSPARK EQUIVALENT CODE
+=======================
+
+PYTHON FUNDAMENTALS (SESSION 1)
+===============================
+
+Select python Interpreter as 3.10
+
+File -> Settings -> Project -> Python Interpreter 
+
+import sys
+
+These modules consists of functions, classes, methods and variables.
+Functions are not bound to any classname or object.methods are bound to classes or its objects.
+A module is a python file which holds functions, classes, methods and variables.
+
+So,whenever we say import sys means whatever functions, classes, methods and variables are inside sys module
+will be imported all of them.
+
+For e.g
+
+So first we import the module and then we call the functions and variables we want.
+
+import sys
+import time
+print(time.time())
+
+It is necessary call the module name and then function you want.
+
+import time as t
+print(t.time())
+
+#below will import all the things.
+
+import datetime
+print(datetime.date.today())
+Module.Class.Method
+
+#below is to import specific things and not all from datetime
+
+from datetime import date
+print(date.today())
+
+so when we are importing specific functions then we can call the function directly.
+from time import time
+print(time())
+
+
+
+PYTHON FUNDAMENTALS (SESSION 2)
+===============================
+
+if we run the python file directly then the global variable __name__ is set to __main__
+
+but if we have it indirectly then the value of __name__ is set to the name of the file
+
+Example
+=======
+
+module1(file1)
+print("name of this module is",__name__)
+
+Output
+name of this module is __main__
+
+module(file2)
+import module1
+print("in the second file the module name is",__name__)
+
+Output
+name of this module is module1
+in the second file the module name is __main__
+
+USE-CASE
+=========
+
+if __name__ == "__main__":
+	print("Executed when invoked directly")
+else:
+	print("executed when imported")
+
+We can define the functionality in a way that whenever we are executing a file 
+directly and we want something to get executed then we can mention it in if statement
+
+And if any functionality is there which should be executed when the file is imported then we can 
+mention it in else statment.
+
+In this way we can sagreegate the things.
+
+a = 5
+
+In python, unlike statically typed languages like c or java, 
+there is no need to specifically declare the data type of the variable. 
+In dynamically typed languages like python, the interpreter itself predicts the datatype/
+
+Named Function
+=============
+
+def sum(a,b):
+	return a+b
+total = sum(3,4)
+
+print(total)
+
+
+PYTHON FUNDAMENTALS (SESSION 3)
+===============================
+
+DIFFERENCES BETWEEN SCALA AND PYTHON
+======================================
+
+1. Case
+
+var totalCount = 10
+//camel case in scala
+
+total_count
+//snake case IN Python
+
+2. Comments
+
+In scala single line comment is done using //
+and for multiline we use
+/*
+*/
+but in python we use 
+# to comment
+# this is a comment
+
+3. foreach
+
+in scala we were using foreach
+but in python foreach is not allowed.
+
+import org.apache.spark.SparkContext
+object First extends App {
+val arr = Array(1,2,3,4,5)
+arr.foreach(println)
+}
+
+Output
+======
+1
+2
+3
+4
+5
+
+In python
+
+arr = [1,2,3,4,5]
+
+for a in arr:
+print(a)
+
+Output
+======
+1
+2
+3
+4
+5
+
+4. Anonymous Function
+
+Scala
+(x => x.split(""))
+
+Python
+(lambda x : x.split(""))
+
+Anonymous functions are referred to as lambda functions in python
+
+
+PYSPARK WORD COUNT PROBLEM (SESSION 1)
+======================================
+
+SCALA CODE
+===========
+
+import org.apache.spark.SparkContext
+
+object wordcountprogram extends App {
+
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt")
+  
+ val words = input.flatMap(x => x.split(" "))
+  
+ val wordCount =  words.map(x => (x,1))
+  
+ val finalCount = wordCount.reduceByKey((a,b) => a+b) 
+  
+ finalCount.collect.foreach(println)
+  
+scala.io.StdIn.readLine()
+ 
+ }
+
+PYTHON CODE
+=============
+
+sc =  SparkContext("local[*]","wordcount")
+
+input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt")
+
+words = input.flatMap(lambda x : x.split(" "))
+
+word_counts = words.map(lambda x : (x, 1))
+
+final_count = word_counts.reduceByKey(lambda x, y : x + y)
+
+result = final_count.collect()
+
+for a in result:
+    print(a)
+
+
+For pysaprk you need to integrate Spark with Python
+
+File -> settings -> project -> Python Interpreter -> Click on(+) -> search pyspark -> install
+
+Two things will be installed 1. py4j (logging things) 2. pyspark
+
+
+PYSPARK (SESSION 2)
+=================
+
+1. By default log level is set to WARN.
+
+we can change it to INFO  -> sc.setLogLevel("INFO")
+
+
+2. if __name == "__main__" :
+
+for a in result:
+    print(a)
+
+else :
+	print("Not executed directly")
+
+When you will directly execute it it will print a
+
+And when you import this module and then execute it indirectly then it will print else statement.
+
+3. Holding the program
+
+You can only see DAG when sparkcode is running.
+So,in pysaprk
+
+from sys import stdin
+
+at last -> stdin.readline()
+
+4. DAG
+
+localhost:4040
+
+pyspark uses api library
+
+scala was connnecting to spark core directly.
+
+hence scala dag matches to our code but pyspark dag does not.
+
+DAG of scala and DAG of python does not matches even for the same code.
+
+
+PYSPARK (SESSION 3)
+=================
+
+1. Lowercase
+
+word_counts= words.map(lambda x: (x.lower(), 1)
+word_counts= words.map(lambda x: (x.upper(), 1)
+
+2. countByValue
+
+sc =  SparkContext("local[*]","wordcount")
+
+input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt")
+
+words = input.flatMap(lambda x : x.split(" "))
+
+word_counts = words.map(lambda x : (x.lower())
+
+final_count = word_counts.countByValue()
+
+print(final_count)
+
+3. sortByKey
+
+sc =  SparkContext("local[*]","wordcount")
+
+input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt")
+
+words = input.flatMap(lambda x : x.split(" "))
+
+word_counts = words.map(lambda x : (x, 1))
+
+final_count = word_counts.reduceByKey(lambda x, y : x + y).map(lambda x: (x[1],x[0]))
+
+result = final_count.sortByKey(False).map(lambda x: (x[0],x[1])).collect()
+
+for a in result:
+    print(a)
+
+4. sortBy
+
+sc =  SparkContext("local[*]","wordcount")
+
+input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/search_data.txt")
+
+words = input.flatMap(lambda x : x.split(" "))
+
+word_counts = words.map(lambda x : (x, 1))
+
+final_count = word_counts.reduceByKey(lambda x, y : x + y)
+
+result = final_count.sortBy(lambda x: x[1], False).collect()
+
+for a in result:
+    print(a)
+
+
+PYSPARK (SESSION 4)
+=================
+
+Customer Orders Code
+====================
+
+Scala Code
+=========
+
+object totalspent extends App {
+  
+ Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/customerorders.csv")
+  
+ val mappedInput = input.map(x => (x.split(",")(0),x.split(",")(2).toFloat))
+
+ val totalByCustomer = mappedInput.reduceByKey((x,y) => x+y) 
+
+ val sortedResults = totalByCustomer.sortBy(x => x._2)
+  
+ val result = sortedResults.collect
+  
+ result.foreach(println)
+ 
+}
+
+Python code
+===========
+
+from pyspark import SparkContext
+  
+ Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ sc =  SparkContext("local[*]","wordcount")
+  
+ input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/customerorders.csv")
+  
+ mappedInput = input.map(x : (x.split(",")[0],x.split(",")[2].toFloat))
+
+ totalByCustomer = mappedInput.reduceByKey(lambda x,y : x+y) 
+
+ sortedResults = totalByCustomer.sortBy(lambda x : x[1],False)
+  
+ result = sortedResults.collect()
+  
+for a in result	
+	print(a)
+ 
+}
+
+
+Movie Rating
+===========
+
+Scala Code
+=========
+
+object RatingsCalculator extends App {
+  
+  Logger.getLogger("org").setLevel(Level.ERROR)
+  
+ val sc = new SparkContext("local[*]","wordcount")
+  
+ val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/moviedata.txt")
+
+ val mappedInput = input.map(x => x.split("\t")(2))
+
+ val ratings = mappedInput.map(x => (x,1))
+
+ val ratings1 = ratings.reduceByKey((x,y) => (x+y))
+
+ val results = ratings1.collect
+ 
+  results.foreach(println)
+
+}
+
+Python code
+===========
+
+from pyspark import SparkContext
+
+sc = SparkContext("local[*]","movie-data")
+
+lines = sc.textFile("/Users/trendytech/Desktop/data/movie-data.data")
+
+ratings = lines.map(lambda x: (x.split("\t")[2],1))
+
+result = ratings.reduceByKey(lambda x,y: x+y).collect()
+
+for a in result:
+
+print(a)
+
+
+Search Data
+===========
+
+def parseLine(line):
+fields = line.split(",")
+age = int(fields[2])
+numFriends = int(fields[3])
+return (age,numFriends)
+
+from pyspark import SparkContext
+
+sc = SparkContext("local[*]","FriendsByAge")
+
+lines = sc.textFile("/Users/trendytech/Desktop/data/friends-data.csv")
+
+rdd = lines.map(parseLine)
+
+# (33,385) input
+#(33,(385,1)) output
+#(33,(3000,5))
+#in scala we used to access the elements of tuple using x._1 , x._2
+#in python we access the elements of tuple using x[0],x[2]
+
+totalsByAge = rdd.mapValues(lambda x: (x,1)).reduceByKey(lambda x,y: (x[0]+y[0], x[1]+y[1]))
+
+averagesByAge = totalsByAge.mapValues(lambda x:x[0]/x[1])
+
+result = averagesByAge.collect()
+
+for a in result:
+
+print(a)
+
+TRANSFORMATIONS IN RDD
+=======================
+flatMap
+Map
+reduceByKey
+sortByKey
+sortBy
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

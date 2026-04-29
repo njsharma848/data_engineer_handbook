@@ -1,0 +1,16 @@
+Books
+=====
+
+Certification guide
+https://medium.com/@santosh_joshi_data/databricks-certified-data-engineer-associate-ae867be1c99e
+
+Databricks Certified Data Engineer Associate Study Guide
+https://www.linkedin.com/posts/priyam-jain-0946ab199_databricks-certified-activity-7350609805935366144-1zPB
+
+Big Book of Data Engineering - 3rd edition
+https://www.linkedin.com/posts/nikhitha-pamidi-a17a0130a_big-book-of-data-engineering-activity-7352004235913248770-Bj0P
+
+Mastering Data Engineering and Analytics with Databricks
+https://www.linkedin.com/posts/manoj----kumar_mastering-data-engineering-and-analytics-activity-7250721482027245568-H0Gd
+
+

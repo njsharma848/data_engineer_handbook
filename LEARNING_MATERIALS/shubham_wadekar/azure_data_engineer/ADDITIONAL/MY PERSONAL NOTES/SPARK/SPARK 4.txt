@@ -1,0 +1,1759 @@
+
+DATAFRAMES SESSION 9
+====================
+
+What do we do in spark program?
+
+1. we read the data from a source and create a dataframe 
+2. we do bunch of transformations and actions - processing 
+3. we write the output to target location - sink
+
+We already saw reading of the data and creating dataframe.
+We will see second one later.
+
+
+3. Now, we will saw the third one how to save the output in file.
+==================================================
+
+saveModes 
+=========
+
+1. append (putting the new file in the existing folder,so that your other files won't get impacted.) 
+=========
+
+2. overwrite (first delete the existing folder if exists, and then it will create a new one) 
+===========
+
+ordersDf.write
+.format("csv")
+.mode(SaveMode.Overwrite)
+.option("path","/Users/Shubham/Desktop/new2")
+.save()
+
+.format("csv") = format in which you want to save the file.
+
+If you do not give any file format by default it will save it in parquet file format.
+So it is default file format for spark.
+
+So,Here output folder[Directory] will be created on Desktop inside that our file will be saved which you can open through cmd.
+
+No of files in the output folder = No of partitions in the dataframe.
+
+val ordersRep = ordersDf.repartition(4)
+print(ordersDf.rdd.getNumPartitions)
+
+We need to partition the dataframe like we used to partition the rdd.
+
+.getNumPartition is not avilable for dataframe.
+First you need to convert the dataframe to rdd then see the partitions using the same.
+
+Repartitions requires full shuffling.
+
+
+3. errorIfExists (it will give error if output folder already exist)
+============
+
+4. ignore (if folder exist it will ignore everything and won't do anything.)
+========
+
+
+Normally when we are writing a dataframe to our target, then we have few options to control the file layout.
+
+Spark File Layout
+==============
+
+1. Number of files and file size - Repartition
+====================================
+
+What if you want to change the number of files?
+
+Then you can change the number of partitions it will automatically change the number of files and file size too.
+No of files in the output folder = No of partitions in the dataframe.
+
+Repartition is first choice but not prefered choice bcz it involves full shuffling of data.
+
+But,it can help you increase the parallelism.
+df.repartition(4)
+Here you will have 4 partitions means 4 executors means more parellelism.
+This is the only advantage.
+
+With a normal repartition you wont be able to skip some of the partitions for performance improvement.
+Partition pruning is not possible.
+
+
+2. Partitioning and Bucketing 
+========================
+
+partitionBy
+==========
+
+It is equivalent to your partitioning in hive. 
+It provides partition pruning (Means you will be able to skip some partitions)
+
+ordersRep.write
+.format("csv")
+.partitionBy("order_status")
+.mode(SaveMode.Overwrite)
+.option("path","/Users/Shubham/Desktop/new5")
+.save()
+
+By default partition is 1.
+
+3. Sorted Data - sortBy
+===================
+
+maxRecordsPerFile
+================
+If you want to specific number of records in a file then you can mention that.
+
+ordersRep.write
+.format("csv")
+.partitionBy("ordstatus")
+.mode(SaveMode.Overwrite)
+.option("maxRecordsperFile",2000)
+.option("path","/Users/Shubham/Desktop/new5")
+.save()
+
+What if you want to save the file in AVRO format?
+=========================================
+
+Avro is external and not supported by default in spark.
+
+we need to add a jar. 
+spark 2.4.4 scala 2.11 
+your spark version and scala version
+
+search on chrome spark avro 2.4.4 2.11 and download the jar.
+
+Project -> build path -> configure build path -> add external jar -> add the jar(downloaded)
+
+Now you will see the files saved in avro format.
+
+You need to do same for XML.
+
+
+
+DATAFRAMES SESSION 10
+=====================
+
+SPARK SQL
+=========
+
+val ordersDf = spark.read
+.format("csv")
+.option("header",true)
+.schema(ordersSchemaDDL)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+.load
+
+ordersDf.createOrReplaceTempView("orders")
+
+Now you will be able to use this dataframe like a table.
+Table name is orders and you query it like normal table.
+
+spark.sql(" <query> ")
+
+val resultDf = spark.sql("select ordstatus,count(*) as status_count from orders group by ordstatus order by status_count ")
+
+resultDf.show()
+
+Breaking the code into 2 lines else everything is same.
+
+val resultDf = spark.sql("select ordstatus,count(*) as status_count from orders"+
+" group by ordstatus order by status_count ")
+
+spark.sql whatever query you write will always give Dataframe as answer.
+
+In performance Spark SQL = DataFrame.
+
+1. Spark SQL (first preferance)
+2. When you need to some flexibility = Dataframe/Dataset
+3. Too much of flexibility = rdd
+
+
+DATAFRAMES SESSION 11
+=====================
+
+Spark supports to save the data in the form of table.
+===========================================
+Sometimes we have a requirement to save the data in a persistent manner in the form of table. 
+
+When data is stored in the form of table then we can connect tableau, power bi etc for reporting purpose.
+
+
+Now,table has 2 parts
+==================
+
+1. Data 
+=======
+Stored in = spark warehouse
+
+spark.sql.warehouse.dir
+
+2. Metadata 
+===========
+Stored in = catalog metastore
+
+By default metadata is stored in memory ( on terminating the application metadata goes away)
+
+So, we can use hive metastore to handle spark metadata ( In which metadata is stored permentatly)
+
+Example
+=======
+
+By default table will be created in default database.
+
+ordersDf.write
+.format("csv")
+.mode(SaveMode.Overwrite)
+.saveAsTable("orders1")
+
+Now there is no need to give the path as we are craeting the table so path is not given.
+
+So this table will get saved in 
+wordcount(project name) --> Refresh --> spark-warehouse (Data) --> orders1
+
+Standard Procedure to create a table with hive metastore
+===============================================
+
+1. To store metadata in hive metastore we need to download a jar by searching
+spark hive 2.4.4 spark 2.11
+
+wordcount(project name) ->Build path -> configure build path --> Add external jar -> Apply and close
+
+2. val spark = SparkSession.builder()
+.config(sparkConf)
+.enableHiveSupport()
+.getOrCreate()
+
+3. Create the database
+spark.sql("create database if not exists retail")
+
+4.spark.catalog.listTables("retail").show()
+
+Now,after running the code
+Inside project(wordcount)
+
+You will see metastore.db(hive),
+spark-warehouse --> retail.db --> orders
+
+Code
+=====
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.SaveMode
+
+object Df7 extends App {
+  
+//Logger.getLogger("org").setLevel(Level.ERROR)
+  
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.enableHiveSupport()
+.getOrCreate()
+
+val ordersSchemaDDL = "orderid Int, orderdate String,custid Int, ordstatus String"
+
+val ordersDf = spark.read
+.format("csv")
+.option("header",true)
+.schema(ordersSchemaDDL)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+.load
+
+spark.sql("create database if not exists retail")
+
+ordersDf.createOrReplaceTempView("orders")
+
+ordersDf.write
+.format("csv")
+.mode(SaveMode.Overwrite)
+.bucketBy(4, "custid")
+.sortBy("custid")
+.saveAsTable("retail.orders")
+
+spark.catalog.listTables("retail").show()
+
+scala.io.StdIn.readLine()
+spark.stop()
+
+}
+
+
+bucketBy works when we say saveAsTable
+==================================
+
+
+DATAFRAMES SESSION 12
+=====================
+
+1. Dataframe reader - taking the data from source 
+2. tranformations to process your data 
+3. Dataframe writer - to write your data to target location
+
+Now,we will focus on second part
+
+Transformations
+=============
+
+1. Low level Transformations 
+========================
+map 
+filter
+groupByKey 
+
+Note: we can perform low level tranformations using raw rdds 
+some of these are even possible with dataframes and datasets.
+
+2. High level Transformations
+=========================
+select 
+where 
+groupBy
+
+Note: These are supported by Dataframes and Datasets.
+
+
+
+So,if Dataframes and Datasets are most prefered choice for spark.
+
+Then what is the use case of rdd.
+===========================
+
+See the file orders_new.csv in Notepad.
+This is an unstructured file. Dataframe won't understand it or will not be able to load it.
+
+So we will have to load this file as a rdd (raw rdd) 
+It treats each line of the rdd is of string type.
+So,whole 1 row will be of string type(all 4 different values of 4 different columns will be of 1 string type)
+
+So,input to the map tranformation is unstructured data:
+
+1 2013-07-2511599,CLOSED 
+
+output we want is comma seperated values.(we want the line with structure associated):
+
+1,2013-07-25,11599,CLOSED
+
+I will associate the output with the case class 
+1,2013-07-25,11599,CLOSED 
+so that we have structure associated..
+
+So,the actual use of low level transformations is
+========================================
+
+1. Whenever we have unstructured data we will send it as input to the map.(Unstructured data). 
+    Input to the map is raw line.
+
+2. Output from the map will be structured line. 
+
+3. Now we have schema associated/structure associated so now we can convert our rdd to a dataset.
+    on structured rdd we call .toDS method to convert it to dataset..
+
+4. Now we can do whatever higher level transformations we want to use.
+
+5. Idea is to give structure to your data and then use high level transformations and do this as early as possible..
+
+Practical Example code
+====================
+
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.SaveMode
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+
+object Df7 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+  
+val myregex = """^(\S+) (\S+)\t(\S+)\,(\S+)""".r
+
+case class Orders(order_id:Int,customer_id:Int,order_status:String)
+
+def parser(line: String) = {
+  line match {
+    case myregex(order_id,date,customer_id,order_status)=>
+      Orders(order_id.toInt,customer_id.toInt,order_status)
+      //we want to return 3 columns only
+  }
+}
+  
+//map takes 1 line at a time as input and this line will go into function (parser)
+//It will try to match this line with regular expression(myregex)and if this matches
+//And as a output will get Orders(3 columns) and we are casting it to case class Orders.
+//myregex = unstructured data Orders(case class) = structured data.
+//What this function will give is taking raw line as input and giving Orders structure as output.
+
+
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+
+val lines = spark.sparkContext.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders_new.csv")
+
+import spark.implicits._
+
+val ordersDS = lines.map(parser).toDS().cache()
+
+//earlier it was rdd of string type and now it is a rdd of Orders type.
+//converting rdd into dataset.
+//It is a dataset specifically beacuse we asspciated it with the case class.
+
+ordersDS.printSchema()
+
+ordersDS.select("order_id").show()
+
+ordersDS.groupBy("order_status").count().show()
+
+scala.io.StdIn.readLine()
+spark.stop()
+
+}
+
+
+DATAFRAMES SESSION 13
+=====================
+
+How to refer a column in a dataframe/dataset
+======================================
+
+1. Column String
+===============
+
+ordersDf.select("order_id","order_status").show
+
+2. Column Object
+==============
+
+ordersDf.select(column("order_id"),col("order_status")).show
+
+In column object type you have to mention either
+column or col
+before actual column name.
+
+Both of these can be used in pyspark, spark with scala.
+
+scala specific 
+===========
+$"order_id" 
+'order_id
+
+You can $ or ' before actual column name.
+
+ordersDf.select(column("order_id"),col("order_date"),$"order_customer_id", 'order_status).show
+
+we cannot mix both columns strings and column object in the same statement
+
+In industry Column String is used mostly.
+
+3. Column Expression
+==================
+
+Note: we cannot mix columns strings with column expression nor we can mix column object with column expression
+
+column string - select("order_id") 
+column object - select(column("order_id")) 
+column expression - concat(x,y)
+
+There is a way to convert column expression to a column object or column string
+Converting into column string is easy
+
+ordersDf.selectExpr("order_id","order_date","concat(order_status,'_STATUS')").show(false)
+
+CODE
+=====
+object Df13 extends App {
+  
+//Logger.getLogger("org").setLevel(Level.ERROR)
+
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+  
+  
+val ordersDf = spark.read
+.format("csv")
+.option("header",true)
+.option("inferSchema",true)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK3/orders.csv")
+.load
+  
+ordersDf.selectExpr("order_id","order_date","concat(order_status,'_STATUS')").show(false)
+ 
+}
+
+
+DATAFRAMES SESSION 14
+=====================
+
+If you want to give column headers to columns who don't have any column names then use
+==========================================================================
+
+val df = spark.read
+.format("csv")
+.option("inferSchema",true)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/dataset1")
+.load
+
+val df1 = df.toDF("name","age","city")
+df1.printSchema()
+
+Which transformations do you use when you want add new columns.
+========================================================
+
+.withColumn
+
+For.e.g
+df.withColumn("adult",)
+
+CODE
+======
+
+PROBLEM STATEMENT - You have to add the new column adult where if age>18 it should show "Y" and if less than 18 then it should show "N".
+
+
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.Row
+
+object Df13 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+
+//Defining the ageCheck function.
+def ageCheck(age: Int) = {
+  if (age>18) "Y" else "N"
+}
+
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+  
+val df = spark.read
+.format("csv")
+.option("inferSchema",true)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/dataset1")
+.load
+  
+val df1 = df.toDF("name","age","city")
+
+val parseAgeFunction = udf(ageCheck(_:Int):String)
+//Registering the function.
+//Input is integer and output is string
+//calling the ageCheck function here which we created at the top.
+
+val df2 = df1.withColumn("adult",parseAgeFunction (col("age")))
+//whenever we want to add a new column we use .withColumn
+//This is an column object expression udf
+df2.show
+}
+
+1. column object expression udf (First Methood)
+=======================================
+
+df.withColumn("adult",parseAgeFunction(col("age")))
+
+Basically we register the function(ageCheck) with the driver. 
+the driver will serialize the function and will send it to each executor.
+
+
+2. sql/string expression udf (Second Method)
+====================================
+
+Function defined at the top ageCheck
+
+val df1 = df.toDF("name","age","city")
+
+spark.udf.register("parseAgeFunction",ageCheck(_:Int):String)
+
+val df2 = df1.withColumn("adult", expr("parseAgeFunction(age)"))
+
+df2.show
+
+3. Defining Anonymous function ( In this case there is no need to define the function at the top)
+=============================================================================
+
+val df1 = df.toDF("name","age","city")
+
+spark.udf.register("parseAgeFunction",(x:Int) => { if (x>18) "Y" else "N"})
+
+val df2 = df1.withColumn("adult", expr("parseAgeFunction(age)"))
+
+df2.show
+    
+Functions available in catalog
+=========================
+
+1. column object expression it is not registered in catalog.
+================================================
+val df1 = df.toDF("name","age","city")
+
+val parseAgeFunction = udf(ageCheck(_:Int):String)
+
+val df2 = df1.withColumn("adult",parseAgeFunction(col("age")))
+
+spark.catalog.listFunctions().filter(x => x.name == "parseAgeFunction").show
+
+It will show all functions if function name is parseAgeFunction.
+
+So,whenever we select the approach of column object expression udf then function is not present or register in catalog.
+
+2. sql expression (easier) the function is registered in catalog. so that we will be able to use it with spark sql also.
+=============================================================================================
+val df1 = df.toDF("name","age","city")
+
+spark.udf.register("parseAgeFunction",ageCheck(_:Int):String)
+
+val df2 = df1.withColumn("adult", expr("parseAgeFunction(age)"))
+
+df2.show
+
+spark.catalog.listFunctions().filter(x => x.name == "parseAgeFunction").show
+
+It will show all functions if function name is parseAgeFunction.
+If it is registered in catalog then we can fire normal sql queries too.
+So try to use sql/string expression udf method to register the function.
+
+
+Once the UDF is registered in Catalog you can fire normal sql query to get the answer.
+=======================================================================
+
+val df1: Dataset[Row] = df.toDF("name","age","city")
+
+spark.udf.register("parseAgeFunction",ageCheck(_:Int):String)
+
+df1.createOrReplaceTempView("peopletable")
+
+spark.sql("select name,age,city,parseAgeFunction(age) as adult from peopletable").show
+
+
+DATAFRAMES SESSION 15
+=====================
+
+1,"2013-07-25",11599,"CLOSED"
+2,"2014-07-25",256,"PENDING_PAYMENT" 
+3,"2013-07-25",11599,"COMPLETE" 
+4,"2019-07-25",8827,"CLOSED" 
+
+1. I want to create a scala list 
+2. from the scala list I want to create a dataframe orderid, orderdate, customerid, status 
+3. I want to convert orderdate field to epoch timestamp (unixtimestamp) - number of seconds after 1st january 1970  
+4. create a new column with the name "newid" and make sure it has unique id's 
+5. drop duplicates - (orderdate , customerid)
+6. I want to drop the orderid column 
+7. sort it based on orderdate
+
+So,How to create a list based on given data.
+
+val myList = List(
+(1,"2013-07-25",11599,"CLOSED"),
+(2,"2014-07-25",256,"PENDING_PAYMENT"),
+(3,"2013-07-25",11599,"COMPLETE"),
+(4,"2019-07-25",8827,"CLOSED"))
+
+To convert list into Dataframe:
+val Df = spark.createDataFrame(myList)
+
+It will automatically try to infer the schema of data.
+
+CODE
+=====
+
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.types.DateType
+
+
+object DF15 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+  
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+
+val myList = List(
+(1,"2013-07-25",11599,"CLOSED"),
+(2,"2014-07-25",256,"PENDING_PAYMENT"),
+(3,"2013-07-25",11599,"COMPLETE"),
+(4,"2019-07-25",8827,"CLOSED"))
+
+import spark.implicits._
+
+val ordersDf = spark.createDataFrame(myList).toDF("orderid","orderdate","customerid","status")
+
+val newDf = ordersDf
+.withColumn("orderdate", unix_timestamp(col("orderdate")
+.cast(DateType)))
+.withColumn("newid", monotonically_increasing_id)
+.dropDuplicates("orderdate","customerid")
+.drop("orderid")
+.sort("orderdate")
+
+newDf.printSchema
+newDf.show
+
+
+DATAFRAMES SESSION 16
+=====================
+
+Aggregate transformations 
+======================
+
+1. Simple Aggregations 
+===================
+
+when after doing the aggregations we get a single row. 
+e.g = total number of records, sum of all quantities.
+
+2. Grouping Aggregates 
+===================
+
+in this we will be doing a group by 
+in the output there can be more than one record.
+
+3. Window Aggregates 
+===================
+
+so we will be dealing with a fixed size window.
+order_data.csv it is 46 mb file
+
+
+
+1. Simple Aggregations 
+===================
+
+1. load the file and create a dataframe. I should do it using standard dataframe reader api. 
+Simple Aggregate 
+totalNumberOfRows, totalQuantity, avgUnitPrice, numberOfUniqueInvoices 
+
+2. calculate this using column object expression 
+
+3. do the same using string expression 
+
+4. Do it using spark sql 
+
+When you do count(*) all the rows are counted.
+But when you do count(StockCode) on specific column nulls are not counted.
+
+CODE
+=====
+
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.types.DateType
+
+object DF16 extends App {
+ 
+Logger.getLogger("org").setLevel(Level.ERROR)
+  
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+
+val invoicedf = spark.read
+.format("csv")
+.option("header","true")
+.option("inferSchema",true)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/order_data.csv")
+.load
+
+//calculate this using column object expression
+========================================
+invoicedf.select(
+    count("*").as("RowCount"),
+    sum("Quantity").as("TotalQuantity"),
+    avg("UnitPrice").as("AvgPrice"),
+    countDistinct("InvoiceNo").as("CountDistinct")
+    ).show()
+    
+//do the same using string expression
+=================================    
+invoicedf.selectExpr(
+    "count(StockCode) as RowCount",
+    "sum(Quantity) as TotalQuantity",
+    "avg(UnitPrice) as AvgPrice",
+    "count(Distinct(InvoiceNo)) as CountDistinct"
+    ).show()
+    
+//Do it using spark sql
+====================    
+invoicedf.createOrReplaceTempView("sales")
+
+spark.sql("select count(*),sum(Quantity),avg(UnitPrice),count(Distinct(InvoiceNo)) from sales").show
+
+
+DATAFRAMES SESSION 17
+=====================
+
+2. Grouping Aggregates 
+====================
+
+1. group the data based on Country and Invoice Number 
+
+2. I want total quantity for each group, sum of invoice value
+sum of (Quantity*unit price)
+
+You need to use .agg when using .groupBy
+
+CODE
+=====
+
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.Dataset 
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.types.DateType
+
+object DF16 extends App {
+ 
+Logger.getLogger("org").setLevel(Level.ERROR)
+  
+val sparkConf = new SparkConf()
+sparkConf.set("spark.app.name","my first application")
+sparkConf.set("spark.master","local[2]")
+  
+val spark = SparkSession.builder()
+.config(sparkConf)
+.getOrCreate()
+
+val invoicedf = spark.read
+.format("csv")
+.option("header","true")
+.option("inferSchema",true)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/order_data.csv")
+.load
+
+//calculate this using column object expression
+=======================================
+val summaryDf = invoicedf.groupBy("Country","InvoiceNo")
+.agg(sum("Quantity").as("TotalQuantity"),
+    sum(expr("Quantity * UnitPrice")).as("InvoiceValue")
+    )
+
+summaryDf.show
+
+//do the same using string expression
+=================================
+val summaryDf1 = invoicedf.groupBy("Country","InvoiceNo")
+.agg(expr("sum(Quantity) as TotalQuantity"),
+    expr("sum(Quantity*UnitPrice)as InvoiceValue")
+    ).show
+    
+//Do it using spark sql
+ ====================   
+val summaryDf2 =    invoicedf.createOrReplaceTempView("sales")
+    spark.sql("""select Country,InvoiceNo,sum(Quantity) as TotalQuantity, 
+      sum(Quantity*UnitPrice)as InvoiceValue from sales group by Country,InvoiceNo""").show
+
+
+DATAFRAMES SESSION 18
+=====================
+
+3. Window Aggregations
+===================== 
+
+1. parition column - country 
+2. ordering column - weeknum
+3. the window size - from 1st row to the current row
+
+Code
+====
+import org.apache.spark.sql.expressions.Window
+
+val windowdata = spark.read
+.format("csv")
+.option("header","true")
+.option("inferSchema",true)
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/windowdata.csv")
+.load
+
+val myWindow = Window.partitionBy("country")
+.orderBy("weeknum")
+.rowsBetween(Window.unboundedPreceding,Window.currentRow)
+
+val mydf = windowdata.withColumn("RunningTotal", sum("invoicevalue").over(myWindow))
+
+mydf.show
+
+
+DATAFRAMES SESSION 19
+=====================
+
+There are 2 kind of joins 
+ 
+1. Simple join (Shuffle sort merge join) 
+2. Broadcast join
+
+we have 2 datasets
+
+orders.csv - order_customer_id 
+customers.csv - customer_id
+
+Kinds of join possible:
+
+1. Inner 
+2. outer 
+3. Left 
+4. Right
+
+Code
+=====
+
+val ordersDf = spark.read
+.format("csv")
+.option("header","true")
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/orders.csv")
+.load
+
+val customersDf = spark.read
+.format("csv")
+.option("header","true")
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/customers.csv")
+.load
+
+val joinCondition = ordersDf.col("order_customer_id")=== customersDf.col("customer_id")
+
+val simplejoin = ordersDf.join(customersDf,joinCondition,"right").sort("customer_id")
+
+//You have to mention 3 parameters(path(read),join condition,join type)
+
+simplejoin.show
+
+
+DATAFRAMES SESSION 20
+=====================
+
+1. Showcasing how your code can lead to ambiguous column names. 
+=========================================================
+
+This happens when we try to select a column name which is coming from 2 different dataframes..
+If the column names are same in both the tables then it will show error while joining like 
+'customer_id is ambiguos'
+beacuse system does not know which customer_id to select bcz it is avilable on both the tables.
+
+There are 2 ways to solve this problem
+================================
+How to rename a column?
+======================
+
+1. This is before the join
+=====================
+You rename the ambiguous column in one of the dataframe 
+.withColumnRenamed("old_column_name","new_column_name")
+
+Code
+====
+
+val ordersDf = spark.read
+.format("csv")
+.option("inferSchema",true)
+.option("header","true")
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/orders.csv")
+.load
+
+val ordersNew = ordersDf.withColumnRenamed("customer_id","cust_id")
+
+
+//reading customers data
+val customersDf = spark.read
+.format("csv")
+.option("inferSchema",true)
+.option("header","true")
+.option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/customers.csv")
+.load
+
+val joinCondition = ordersNew.col("customer_id") === customersDf.col("customer_id")
+
+val simplejoin = ordersNew.join(customersDf,joinCondition,"outer")
+.select("order_id","customer_id","customer_fname")
+.show(1000)
+
+2. once the join is done we can drop one of those columns.
+================================================
+Use .drop
+
+Code
+====
+val joinCondition = ordersDf.col("customer_id") === customersDf.col("customer_id")
+
+val simplejoin = ordersDf.join(customersDf,joinCondition,"outer")
+.drop(ordersDf.col("customer_id"))
+.select("order_id","customer_id","customer_fname")
+.sort("order_id")
+.withColumn("order_id",expr("coalesce(order_id, -1)"))
+.show(1000)
+
+2. How to deal with null's problem statement
+========================================
+
+whenever order_id is null show -1
+
+coalesce
+
+.withColumn("order_id",expr("coalesce(order_id, -1)"))
+
+
+DATAFRAMES SESSION 21
+=====================
+
+Internals of a normal join operation Simple join involves - Shuffle sort merge join
+===================================================================
+
+Consider orders and customers file stored as json
+
+Inside Orders - There are 2 files (so 2 partitions)
+Inside Customers - There are 2 files (so 2 partitions)
+No of files = No of partitions.
+
+executor1 - node 1
+================ 
+orders 
+15192,2013-10-29 00:00:00.0,1,PENDING_PAYMENT 
+33865,2014-02-18 00:00:00.0,2,COMPLETE
+
+Converting the data into key value pair.
+
+(1,{15192,2013-10-29 00:00:00.0,PENDING_PAYMENT}) 
+(2,{33865,2014-02-18 00:00:00.0,COMPLETE})
+
+customers 
+3,Ann,Smith,XXXXXXXXX,XXXXXXXXX,3422 Blue Pioneer Bend,Caguas,PR,00725
+
+(3,{Ann,Smith,XXXXXXXXX,XXXXXXXXX,3422 Blue Pioneer Bend,Caguas,PR,00725})
+
+executor2 - node 2 
+===============
+orders 
+35158,2014-02-26 00:00:00.0,3,COMPLETE 
+15192,2013-10-29 00:00:00.0,4,PENDING_PAYMENT
+
+(3,{35158,2014-02-26 00:00:00.0,COMPLETE })
+(4,{15192,2013-10-29 00:00:00.0,PENDING_PAYMENT}) 
+
+customers
+2,Mary,Barrett,XXXXXXXXX,XXXXXXXXX,9526 Noble Embers Ridge,Littleton,CO,80126 
+
+(2{,Mary,Barrett,XXXXXXXXX,XXXXXXXXX,9526 Noble Embers Ridge,Littleton,CO,80126 })
+
+
+You can see that keys needs to be on same machine to get joined.If they are on different machines it is not possible to join. e.g key = 3
+Thats why shuffling is required.
+
+So for shuffling Converting the data into key value pair.
+
+it each machine or executor will write the output into the exchange
+exchange is nothing but like a buffer in each executor 
+
+from this exchange spark framework can read it and do the shuffle.
+Spark reads exchenge on each executors.
+
+executor3 - node 3
+===============
+
+orders 
+(2,{33865,2014-02-18 00:00:00.0,COMPLETE})
+(3,{35158,2014-02-26 00:00:00.0,COMPLETE })
+
+customers
+(2{,Mary,Barrett,XXXXXXXXX,XXXXXXXXX,9526 Noble Embers Ridge,Littleton,CO,80126 })
+(3,{Ann,Smith,XXXXXXXXX,XXXXXXXXX,3422 Blue Pioneer Bend,Caguas,PR,00725}) 
+
+all the records with the same key go to the same reduce exchange.so that joining can happen.(shuffling activity is done here)
+
+This all the data also get saved in exchenge 
+In this case lets say exchenge of executor3.
+
+we can say 
+executor 1 is map exchenge 
+executor 2 is map exchenge 
+executor 3 is reduce exchenge 
+
+DAG
+====
+
+2 tasks = 2 partitions.( bcz our orders have 2 files so 2 partitions)
+No of tasks = No of partitions.
+No of jobs = No of actions
+
+E1 - output goes to Exchenge1(Map E)
+E2 - output goes to Exchenge2(Map.E)
+
+E3 - Now all the records with the same key go to the same reduce exchange which is known as shuffling
+       data will get sorted after that sort merge join will happen.
+
+For the Inner Join system will internally go for Broadcast Join. Shuffling will not be there.
+System will try to do it whenever possible.
+
+But what if there is a case when you do not want to use systems optimization like you don't want to happen broadcast join want to go with normal join.
+Then you need to set a property before join operation in code.
+
+spark.sql("SET spark.sql.autoBroadcastJoinThreshold = -1")
+
+
+DATAFRAMES SESSION 22
+=====================
+
+1. Simple Join - It includes shuffling
+2. Broadcast Join - This does not require a shuffle.
+
+So question comes here is when to go for simple join and when to go for broadcast join?
+========================================================================
+Whenever we are joining 2 large dataframes then it will invoke a simple join and shuffle will be required.
+There is no other option we have to go with the simple join.
+
+When you have one large dataframe and the other dataframe is smaller, in that case you can go with the broadcast join.
+same concept of broadcast join as hive.
+
+Now what if both the tables are small, then you should not go with spark beacuse spark is meant for big data, go with other technology.
+
+shuffling is the costliest thing in big data avoid it as much as possible.
+
+How to give broadcast join manually
+==============================
+
+val simplejoin = ordersDf.join(broadcast(customersDf),joinCondition,"outer")
+
+just add broadcast keyword before the small dataframe.Make sure you do it with only small dataset otherwise it 
+will give out of memory error.
+
+
+DATAFRAMES SESSION 23
+=====================
+
+This session is for solving a real-life problem.
+biglog.txt file
+
+Problem Statment = Grouping based on logging level and month and count that
+we have 5 different logging levels and 12 months
+so we should get (5*12) = 60 rows.
+
+you can pivot the table by giving command
+
+.pivot(column_name)
+
+Do it again.
+
+
+
+
+
+Pyspark DataFrame Session 1
+========================
+
+1. reading the data - Reader API
+2. crunching of data - transformations
+3. write the data back - Writer API
+
+Writing the data
+==============
+
+Scala -
+
+orderDf.write.format("csv")
+.mode(SaveMode.Overwrite)
+.option("path","/Users/trendytech/Desktop/newfolder1")
+.save()
+
+Pyspark - 
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+orderDf = spark.read.format("csv")\
+    .option("header",True)\
+    .option("inferSchema",True)\
+    .option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/orders.csv")\
+    .load()
+
+orderDf.write.format("csv")\
+.mode("overwrite")\
+.option("path","/Users/Shubham/Desktop/newfolder")\
+.save()
+
+print("number of partitions are ", orderDf.rdd.getNumPartitions())
+
+ordersRep = orderDf.repartition(4)
+
+Output file has only 1 file beacuse of 1 partition. if 4 then 4 partition will be created.
+
+Types of writing
+=============
+overwrite
+append
+errorIfExists - give error if file exists.
+ignore - It will not give any errors nor it will generate any new file.
+
+orderDf.write\
+.mode("overwrite")\
+.option("path","/Users/Shubham/Desktop/newfolder")\
+.save()
+
+Parquet is the default file format in apache spark when we talk about structured api's
+When we do not specify any file format then we get parquet file format.
+
+Spark File Layout
+==============
+
+Number of files is equal to number of partitions.
+
+1. simple repartition - repartition
+2. partitioning - partitionBy (allows partitioning pruning)
+3. bucketBy
+4. maxRecordsPerFile
+
+orderDf.write.format("csv").partitionBy("order_status")\
+.mode("overwrite")\
+.option("path","/Users/trendytech/Desktop/newfolder4")\
+.save()
+
+Avro is not by default available in spark.
+If you give avro directly it will show error.
+For that you need to add jars.
+
+Your pyspark version is 2.4.4
+Search on google ( pyspark 2.4.4 avro) - download the jar file.
+Then just add this line thats it you don't need to do anything extra and mention the file format.
+my_conf.set("spark.jars","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/spark-avro_2.12-2.4.4.jar")
+
+code
+====
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+my_conf.set("spark.jars","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/spark-avro_2.12-2.4.4.jar")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+orderDf = spark.read.format("csv")\
+    .option("header",True)\
+    .option("inferSchema",True)\
+    .option("path","/Users/Shubham/Desktop/shared1/DATASET-SPARK4/orders.csv")\
+    .load()
+
+orderDf.write.format("avro")\
+.mode("overwrite")\
+.option("path","/Users/Shubham/Desktop/newfolder5")\
+.save()
+
+
+Pyspark DataFrame Session 2
+========================
+
+Spark SQL
+========
+Creating table from dataframe
+=========================
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+orderDf = spark.read.format("csv")\
+.option("header",True)\
+.option("inferSchema",True)\
+.option("path","/Users/trendytech/Desktop/data/orders.csv")\
+.load()
+
+orderDf.createOrReplaceTempView("orders")
+
+resultDf = spark.sql("select order_customer_id, count(*) as total_orders from orders where
+order_status = 'CLOSED' group by order_customer_id order by total_orders desc")
+resultDf.show()
+
+
+Table has 2 parts
+===============
+1. data - warehouse - spark.sql.warehouse.dir - You can see it app left side tab.
+2. metadata - catalog metastore - memory - It will be gone once session is closed.
+                                                                       Thats we will enable hive support.
+Code
+=====
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).enableHiveSupport().getOrCreate()
+
+orderDf = spark.read.format("csv")\
+.option("header",True)\
+.option("inferSchema",True)\
+.option("path","/Users/trendytech/Desktop/data/orders.csv")\
+.load()
+
+spark.sql("create database if not exists retail")
+
+orderDf.write.format("csv")\
+.mode("overwrite")\
+.bucketBy(4,"order_customer_id")\
+.sortBy("order_customer_id")\
+.saveAsTable("retail.orders4")
+
+1. Creating database
+2. Enabling Hive Support to have permenant metadata.
+3. saving as table.
+
+
+Pyspark DataFrame Session 3 = Df 13
+==============================
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import regexp_extract
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+myregex = r'^(\S+) (\S+)\t(\S+)\,(\S+)'
+
+lines_df = spark.read.text("/Users/trendytech/Desktop/data/orders_new.csv")
+
+#lines_df.printSchema()
+#lines_df.show()
+
+final_df =
+lines_df.select(regexp_extract('value',myregex,1).alias("order_id"),regexp_extract('value',myreg
+ex,2).alias("date"),regexp_extract('value',myregex,3).alias("customer_id"),regexp_extract('value'
+,myregex,4).alias("status"))
+
+final_df.printSchema()
+final_df.show()
+final_df.select("order_id").show()
+final_df.groupby("status").count().show()
+
+
+
+Pyspark DataFrame Session 3 = Df 13
+==============================
+
+Column String
+Column object
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+orderDf = spark.read.format("csv")\
+.option("header",True)\
+.option("inferSchema",True)\
+.option("path","/Users/trendytech/Desktop/data/orders.csv")\
+.load()
+
+orderDf.select("order_id","order_date").show()
+
+orderDf.select(col("order_id")).show()
+
+
+Pyspark DataFrame Session 4 = Df 14
+===============================
+
+Creating our own user defined function is spark.
+
+1. Column object expression -- the function won't be registered in catalog
+2. SQL expression -- the function will be registered in catalog.
+                                 So in this case we can even use it with spark SQL.
+
+if the age is greater than 18 we have to populate the 4th column named Adult with "Y"
+else we need to populated the column with "N"
+
+1. Column object expression
+========================
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+df = spark.read.format("csv")\
+.option("inferSchema",True)\
+.option("path","/Users/trendytech/Desktop/data/dataset1")\
+.load()
+
+df1 = df.toDF("name","age","city")
+
+def ageCheck(age):
+if(age > 18):
+return "Y"
+else:
+return "N"
+
+parseAgeFunction = udf(ageCheck,StringType())
+
+df2 = df1.withColumn("adult",parseAgeFunction("age"))
+//function is not in double quote
+
+df2.printSchema()
+df2.show()
+
+2. SQL expression
+==============
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+df = spark.read.format("csv")\
+.option("inferSchema",True)\
+.option("path","/Users/trendytech/Desktop/data/dataset1")\
+.load()
+
+df1 = df.toDF("name","age","city")
+
+def ageCheck(age):
+if(age > 18):
+return "Y"
+else:
+return "N"
+
+spark.udf.register("parseAgeFunction",ageCheck,StringType())
+
+for x in spark.catalog.listFunctions():
+print(x)
+
+df2 = df1.withColumn("adult",expr("parseAgeFunction(age)"))
+//function is in double quote
+
+df2.show()
+
+
+Pyspark DataFrame Session 5 = Df 15
+===============================
+
+create the spark session
+create a local list
+create a dataframe from this local list and give column names
+add a new column date1 with unix timestamp
+add one more column with monotonically increasing id
+drop the duplicates based on combination of 2 columns
+drop the orderid column
+sort based on order date
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+myList = [(1,"2013-07-25",11599,"CLOSED"),
+(2,"2014-07-25",256,"PENDING_PAYMENT"),
+(3,"2013-07-25",11599,"COMPLETE"),
+(4,"2019-07-25",8827,"CLOSED")]
+
+ordersDf = spark.createDataFrame(myList)\
+.toDF("orderid","orderdate","customerid","status")
+
+newDf = ordersDf\
+.withColumn("date1",unix_timestamp(col("orderdate"))) \
+.withColumn("newid", monotonically_increasing_id()) \
+.dropDuplicates(["orderdate","customerid"])\
+.drop("orderid")\
+.sort("orderdate")
+
+ordersDf.printSchema()
+ordersDf.show()
+newDf.show()
+
+Pyspark DataFrame Session 5 = Df 16
+===============================
+
+Aggregate transformations
+1. Simple aggregations
+2. Grouping aggregations
+3. window aggregates
+
+simple aggregates
+================
+
+from pyspark import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+
+my_conf = SparkConf()
+my_conf.set("spark.app.name", "my first application")
+my_conf.set("spark.master","local[*]")
+
+spark = SparkSession.builder.config(conf=my_conf).getOrCreate()
+
+invoiceDF = spark.read
+.format("csv")
+.option("header",true)
+.option("inferSchema",true)
+.option("path","/Users/trendytech/Desktop/order_data.csv")
+.load()
+
+#column object expression
+invoiceDF.select(
+count("*").as("RowCount"),
+sum("Quantity").as("TotalQuantity"),
+avg("UnitPrice").as("AvgPrice"),
+countDistinct("InvoiceNo").as("CountDistinct")).show()
+
+#column string expression
+invoiceDF.selectExpr(
+"count(*) as RowCount",
+"sum(Quantity) as TotalQuantity",
+"avg(UnitPrice) as AvgPrice",
+"count(Distinct(InvoiceNo)) as CountDistinct").show()
+
+#spark SQL
+invoiceDF.createOrReplaceTempView("sales")
+spark.sql("select count(*),sum(Quantity),avg(UnitPrice),count(distinct(InvoiceNo)) from
+sales").show
+
+spark.stop()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

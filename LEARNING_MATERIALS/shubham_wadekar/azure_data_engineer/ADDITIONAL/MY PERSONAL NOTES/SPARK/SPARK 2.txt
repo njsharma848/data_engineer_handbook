@@ -1,0 +1,1404 @@
+
+APACHE SPARK IN DEPTH
+=====================
+
+SESSION 7
+=========
+
+We are interested in column 1 and 11
+
+1st column is the search word.
+11th column is the totalcost for the search word
+
+When you want to run the code in terminal put the file in Hdfs first (and give hdfs path)
+
+hadoop fs -put /home/cloudera/Desktop/shared1/DATASET-SPARK2/bigdatacampaign.csv /user/cloudera
+
+val rdd12 = sc.textFile("/user/cloudera/bigdatacampaign.csv")
+
+//sc.textFile() = sc.textFile creates the rdd. and rdd is split across the machines. 
+
+val mappedInput = rdd12.map(x=> (x.split(",")(10).toFloat,x.split(",")(0)))
+
+Output = (24.06,big data contents)(59.94,spark training with lab access)
+
+//Convert the string type into float(it is done for the column which holds the integer)
+
+Now, Input 
+24.06, big data contents
+59.94, spark training with lab access,
+
+flatMapValues = (It will faltten out the values into individual values)
+
+val words = mappedInput.flatMapValues(x => x.split(" "))
+
+Output =
+(24.06,big)
+(24.06,data)
+(24.06,contents)
+
+Now converting key to value and value to key
+
+val finalMapped = words.map(x => (x._2.toLowerCase,x._1))
+
+LowerCase = To assure all the words should be in lower case.
+
+Output =
+(big,24.06)
+(data,24.06)
+(contents,24.06)
+(learning,34.98)
+(big,34.98)
+(data,34.98)
+
+val total = finalMapped.reduceByKey((x,y) => (x+y))
+
+Output =
+(nural,34.22), (upgrad,24.57), (weekend,17.03), (paper,58.17)
+
+But the data is not sorted.
+
+val sorted = total.sortBy(x => x._2,false)
+
+False = Descending 
+by default it is ascending
+
+Output =
+(data,16394.643), (big,12889.28), (in,5774.8394), (hadoop,4818.3394)
+
+CODE(TERMINAL)
+===============
+
+val rdd12 = sc.textFile("/user/cloudera/bigdatacampaign.csv")
+
+val mappedInput = rdd12.map(x=> (x.split(",")(10).toFloat,x.split(",")(0)))
+
+val words = mappedInput.flatMapValues(x => x.split(" "))
+
+val finalMapped = words.map(x => (x._2.toLowerCase,x._1))
+
+val total = finalMapped.reduceByKey((x,y) => (x+y))
+
+val sorted = total.sortBy(x => x._2,false)
+
+
+CODE(IDE)
+=========
+
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkContext
+
+object KeywordAmount extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+  
+val sc = new SparkContext("local[*]","wordcount")
+  
+val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/bigdatacampaign.csv")
+
+val mappedInput = input.map(x=> (x.split(",")(10).toFloat,x.split(",")(0)))
+
+val words = mappedInput.flatMapValues(x => x.split(" "))
+
+val finalMapped = words.map(x => (x._2.toLowerCase,x._1))
+
+val total = finalMapped.reduceByKey((x,y) => (x+y))
+
+val sorted = total.sortBy(x => x._2,false)
+
+sorted.take(20).foreach(println)
+
+}
+
+false = Desc.
+take(20) = Top 20
+
+Final Output
+==========
+(data,16394.64)
+(big,12889.278)
+(in,5774.84)
+(hadoop,4818.34)
+(course,4191.5903)
+(training,4099.3696)
+(online,3484.4202)
+(courses,2565.78)
+(intellipaat,2081.22)
+(analytics,1458.51)
+(tutorial,1383.3701)
+(hyderabad,1118.16)
+(spark,1078.72)
+(best,1047.7)
+(bangalore,1039.27)
+(and,985.8)
+(certification,967.44)
+(for,967.05005)
+(of,871.42004)
+(to,848.32996)
+
+
+
+SESSION 8
+=========
+
+SPARK BROADCAST VARIABLE
+========================
+
+Problem Statement
+================
+
+We don't want boring words like (in,5774.84) (best,1047.7) (and,985.8) (of,871.42004) (to,848.32996)
+
+Map Side Join in Hive = Broadcast Variable
+
+we created a file with all boring words and stored it on desktop
+
+boringwords is small data(small dataset), we will broadcast this on all machines..
+
+and the campaign search keywords(big dataset) will be distributed across the cluster.
+
+
+//sc.textFile() = sc.textFile creates the rdd. and rdd is split across the machines. 
+//We want to open the file locally create a set and broadcast that set on all machines.
+//So we are writing the code with the intention that this will run locally not on cluster.
+
+//To open the file locally we say
+   Source.fromFile ("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/boringwords.txt")
+
+import scala.io.Source = We need to import this when using Source.fromFile
+
+
+CODE
+=====
+
+import scala.io.Source
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkContext
+
+
+object KeywordAmount2 extends App {
+  
+def loadBoringWords():Set[String] ={
+    
+var boringWords:Set[String] = Set()
+    
+//Initially there are no boring words so we are loading it with empty set.
+    
+val lines = Source.fromFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/boringwords.txt").getLines()
+
+//It's a local list not a rdd.
+//.getLines() = To get all the lines.
+    
+for (line <- lines) {
+      boringWords += line
+   }
+    boringWords
+ }
+
+//We are writing this function to remove all the duplicates in file so that every word should be considered only once.
+  
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+  
+val sc = new SparkContext("local[*]","wordcount")
+
+var nameSet = sc.broadcast(loadBoringWords)
+//Broadcasting.
+//It will take loadBoringWords Function and return the boringWords
+//nameSet is broadcast variable and it will broadcasted across the cluster.
+  
+val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/bigdatacampaign.csv")
+
+val mappedInput = input.map(x=> (x.split(",")(10).toFloat,x.split(",")(0)))
+
+val words = mappedInput.flatMapValues(x => x.split(" "))
+
+val finalMapped = words.map(x => (x._2.toLowerCase,x._1))
+
+val filteredRdd = finalMapped.filter( x=> !nameSet.value(x._1))
+//(big,24)
+//(is,15)
+//value is of boolean type. We are broadcasting nameSet across the cluster of main file and checking whether boringwords exists in it or not if exists ignore it.
+    
+val total = filteredRdd.reduceByKey((x,y) => (x+y))
+
+val sorted = total.sortBy(x => x._2,false)
+
+sorted.take(20).foreach(println)
+
+}
+
+Set[String] = Use of this depends on requirment.(In this we do not wanted duplicates thats why we used set]
+                     You may use map,list,array depending upon situation.
+
+So,Code
+=======
+
+import scala.io.Source
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkContext
+
+
+object KeywordAmount2 extends App {
+def loadBoringWords():Set[String] ={
+var boringWords:Set[String] = Set()
+val lines = Source.fromFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/boringwords.txt").getLines()
+
+for (line <- lines) {
+      boringWords += line
+   }
+    boringWords
+ }
+
+Logger.getLogger("org").setLevel(Level.ERROR)
+val sc = new SparkContext("local[*]","wordcount")
+var nameSet = sc.broadcast(loadBoringWords)
+val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/bigdatacampaign.csv")
+val mappedInput = input.map(x=> (x.split(",")(10).toFloat,x.split(",")(0)))
+val words = mappedInput.flatMapValues(x => x.split(" "))
+val finalMapped = words.map(x => (x._2.toLowerCase,x._1))
+val filteredRdd = finalMapped.filter( x=> !nameSet.value(x._1))
+val total = filteredRdd.reduceByKey((x,y) => (x+y))
+val sorted = total.sortBy(x => x._2,false)
+sorted.take(20).foreach(println)
+}
+
+
+
+
+
+SESSION 9
+=========
+
+WORKING OF SPARK ACCUMULATOR E.G
+=================================
+
+In Terminal
+==========
+
+Problem Statement - To find the number of blank lines.
+
+hadoop fs -put /home/cloudera/Desktop/shared1/DATASET-SPARK2/samplefile.txt /user/cloudera
+
+val myrdd  = sc.textFile("/user/cloudera/samplefile.txt")
+
+val myaccum = sc.longAccumulator("blank lines accmulator")
+
+myrdd.foreach(x => if (x=="") myaccum.add(1))
+
+myaccum.value
+
+Output = 8
+
+SESSION 10
+==========
+
+Dataset =
+
+"WARN: Tuesday 4 September 0405"
+"ERROR: Tuesday 4 September 0408"
+"ERROR: Tuesday 4 September 0408"
+"ERROR: Tuesday 4 September 0408"
+"ERROR: Tuesday 4 September 0408"
+"ERROR: Tuesday 4 September 0408"
+
+Problem Statement =
+
+Step 1: I want to first create a list in scala using above data.
+
+val myList = List ("WARN: Tuesday 4 September 0405",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408")
+
+Step 2: create an rdd out of the above list.
+
+When you want to create an rdd from the list which is residing locally you need to use,
+
+So Whenever you have local collection be it map,list,array,set use sc.parallelize
+
+val originalLogsRdd = sc.parallelize(myList)
+
+Step 3: I want to calculate the count of WARN AND ERROR
+
+
+CODE
+=====
+
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkContext
+
+object LogLevel extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+val sc = new SparkContext("local[*]","wordcount")
+
+val myList = List ("WARN: Tuesday 4 September 0405",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408")
+
+
+val originalLogsRdd = sc.parallelize(myList)
+
+val newPairRdd = originalLogsRdd.map(x => {
+val columns = x.split(":")
+  
+// split will give us an array of 2 elements bcz we splitted it based on : 
+// (WARN = 0 Tuesday 4 September 0405 = 1)
+// and we are interseted in only 0th column.
+  
+val logLevel = columns(0)
+(logLevel,1) 
+
+//Tuple of 2
+// { } = We used this beacuse we were going write the code in multiple line.
+
+})
+
+val aggregation = newPairRdd.reduceByKey((x,y) => x+y)
+
+aggregation.collect().foreach(println)
+
+}
+
+
+object LogLevel extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+val sc = new SparkContext("local[*]","wordcount")
+
+val myList = List ("WARN: Tuesday 4 September 0405",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408",
+                   "ERROR: Tuesday 4 September 0408")
+
+
+sc.parallelize(myList).
+map(x => (x.split(":")(0),1)).
+reduceByKey((x,y) => x+y).
+collect().
+foreach(println)
+
+}
+
+Everything is a expression in scala.(Beacuse every line returns something.)
+
+and When every line returns something then only chaining of functions is possible. 
+
+
+SESSION 11
+==========
+
+1. Narrow and Wide transformations
+==============================
+
+Narrow transformations - No shuffling is involved
+====================
+map
+flatMap
+filter
+
+This work on principle of Data loaclity (Wherever data is there process there).
+
+Wide transformation - where shuffling is involved
+=================
+reduceByKey
+groupByKey
+
+It is haevy and takes times and costly too(involves lots of data movement)
+Try to reduce the use of wide transformations as much as possible.
+Shuffling = We are moving data from one machine to other machine.
+
+Example
+=======
+
+500 mb file in hdfs
+
+val rdd1 = sc.textFile("path of the file")
+
+4 partitions because your hdfs file has 4 blocks.
+
+there is a 1 to 1 mapping between your file blocks and rdd partitions.
+
+Map Transformation
+==================
+
+rdd1.map(x => x.length)
+
+p1 p2 p3 p4
+o1 o2 o3 o4
+
+Input = hello how are you
+
+Output =
+hello
+how
+are
+you
+
+reduceByKey Transformation
+=======================
+Input =
+p1
+(hello,1)
+(how,1)
+
+p2
+(hello,1)
+(is,1)
+
+p3
+(is,1)
+(how,1)
+
+p4
+(world,1)
+(how,1)
+
+Output =
+(hello,2)
+(how,3)
+(is,2)
+(world,1)
+
+We will need to put all the data from all partitions in one machine so we can aggregate the things. 
+
+
+2. Stages in spark
+===============
+
+Why stages are different?
+
+For.eg(session 10 DAG)
+
+Stage 5                  Stage 6
+ 
+Parallelize             reduceByKey
+     
+Map
+
+Theory
+======
+
+stages are marked by shuffle boundaries.
+
+whenever we encounter a shuffle, a new stage gets created.
+
+whenever we call a wide transformation a new stage gets created.
+
+if i use 3 wide tranformations how many stages get created?
+
+it will be atleast 4 stages (3 wide + 1 narrow)
+
+if we have 2 stages and 1 shuffling involved.
+
+output of stage 1 is sent to disk
+and stage 2 reads it back from disk
+
+Thats why wide transformations takes lots of time for processing.
+
+Solution
+=======
+
+we can atleast try to make sure we use wide transformations later
+
+
+
+SESSION 12
+==========
+
+Difference between reduceByKey and reduce
+=====================================
+
+reduceByKey is a transformation AND reduce is an action
+
+whenever you call a transformation on a rdd you get resultant rdd.
+
+whenever you call an action on a rdd you get local variable.
+
+Example
+=======
+
+val a = 1 to 100
+val base = sc.parallelize(a)
+base.reduce((x,y) => x+y)
+
+Here,reduce is an action we will directly get result which will be a local variable.
+
+Output, Int = 5050
+
+reduceByKey only works on pair rdd's (tuple with 2 elements)
+(hello,1)
+(how,1)
+(how,1)
+
+why spark developers gave reduceByKey as transformation and reduce as an action?
+=====================================================================
+
+Reduce gives you a single output which is very small.
+You can use at very last after which nothing is there.
+
+reduceByKey
+
+(hello,49)
+(hi,23)
+
+we can still have huge amount of data and we might be willing to do further operations in parallel,
+thats why we want the data to be distrubuted in parallel.
+So,result of reduceByKey is rdd again and reduceByKey  is transformation.
+
+
+SESSION 13
+==========
+
+groupByKey vs reduceByKey
+=======================
+both of them are wide transformations.
+
+
+reduceByKey
+=============
+we will get advantage of local aggregation
+1. more work in parallel
+2. less shuffling required
+
+you can think this same as combiner acting at the mapper end.
+
+For.e.g
+
+Node 1 			Node2			Node3
+
+(x 1)	(y 1)		(x 1)	(y,1)		(x 1)	(y 1)
+			(x 1)	(y,1)		(x 1)	(y 1)
+						(x 1)	(y 1)
+
+(x 1)	(y 1)		(x 2)	(y,2)		(x 3)	(y 3)
+
+Local Aggreation has happened in Node1,2,3
+Node1,2,3 output will be transferred to Node4 and Node5
+As an output from this nodes or machines we have sent only one key value pair to each machine.
+
+Node 4			Node5
+
+(x 1)			(y 1)		
+(x 2)			(y 2)
+(x 3)			(y 3)
+
+(x 6)			(y 6)	
+
+
+groupByKey
+==========
+
+Node 1 			Node2			Node3
+
+(x 1)	(y 1)		(x 1)	(y,1)		(x 1)	(y 1)
+			(x 1)	(y,1)		(x 1)	(y 1)
+						(x 1)	(y 1)
+
+Node4 and Node5 have to work lot in this case,they are getting all the load.
+
+Node 4			Node5
+
+(x 1)	(x 1)		(y 1)	(y 1)				
+(x 1)	(x 1)		(y 1)	(y 1)			
+(x 1)	(x 1)		(y 1)	(y 1)		
+
+(x 6)			(y 6)
+
+we do not get any local aggregation
+
+all the key value pairs are sent (shuffled) to another machine.
+
+so we have to shuffle more data and we get less parallelism.
+
+so, always prefer reduceByKey and never use groupByKey
+==============================================
+
+Hypothetical example
+==================
+
+consider you have 1 TB data in hdfs
+
+1000 node cluster
+
+how many partitions will be there in your rdd?
+
+1 TB / 128 mb - 8000 blocks
+
+so your rdd will have 8000 partitions.
+
+on each node we might end up getting 8 partitions.
+
+NODE 1
+WARN: Tuesday 4 September 0405
+WARN: Tuesday 4 September 0405
+WARN: Tuesday 4 September 0405
+ERROR: Tuesday 4 September 0405
+
+NODE 2
+ERROR: Tuesday 4 September 0405
+ERROR: Tuesday 4 September 0405
+ERROR: Tuesday 4 September 0405
+INFO: Tuesday 4 September 0405
+
+NODE 3
+INFO: Tuesday 4 September 0405
+INFO: Tuesday 4 September 0405
+INFO: Tuesday 4 September 0405
+INFO: Tuesday 4 September 0405
+INFO: Tuesday 4 September 0405
+INFO: Tuesday 4 September 0405
+
+NODE 4
+NODE 5
+NODE 6
+NODE 7
+NODE 8
+
+groupByKey
+==========
+
+all the warns will go on one machine
+all the errors will go on one machine
+and all the info will go on one machine
+
+at the max if we have 3 distinct keys.. then we will have
+maximum 3 machines which will hold all our data.
+
+earlier before applying groupByKey we have our data well
+distributed across 1000 machines.
+
+but now after using groupByKey we have data distributed
+across at the max 3 machines.
+
+It's not that we dont have machines to hold the data but its beacuse limitation of the code
+all of our data will go into max of 3 machines.
+
+3 machines hold 1 TB data in memory that means we
+have a huge possibility of out of memory error.
+
+we will get only 3 partitions (maximum) which are full and
+it can lead to out of memory error.
+
+even if we do not get out of memory error then also it is
+not suggested to use groupByKey.
+
+because we are restricting our parallelism.
+
+so we should never use groupByKey.
+
+Can you tell me the transformation which may give out of memory error(exception)
+====================================================================
+Ans = groupByKey
+
+
+CODE
+=====
+
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.SparkContext
+
+object LogLevelGrouping extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)
+  
+val sc = new SparkContext("local[*]","wordcount")
+  
+val baseRdd = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/bigLog.txt")
+
+val mappedRdd = baseRdd.map(x => {
+  val fields = x.split(":")
+  (fields(0),fields(1))
+})
+mappedRdd.groupByKey.collect().foreach(x => println(x._1,x._2.size))
+
+scala.io.StdIn.readLine()
+}
+
+Output
+======
+
+(WARN,4998886)
+(ERROR,5001114)
+
+
+groupByKey will work like this.
+
+hello,1
+hello,1
+hello,1
+
+(hello,{1,1,1}) x
+
+x._1 , x._2.size
+
+DAG (localhost:4040)
+==================
+
+Stage 0		Stage 1
+
+textFile		groupByKey
+  |		
+  |
+  |
+  |
+Map
+
+Map will go to ---> groupByKey
+
+Stage Id	Duration	Tasks	Input	Shuffle Read	Shuffle Write
+
+Stage 1	44 sec	11		77.3 MB
+
+Stage 0 	6 sec	11	348.7MB			77.3 MB
+
+Stage 0 = Input is 348.7 MB but shuffle write is 77.3 MB bcz spark will do some internal compression so it has to shuffle less and takes less time.
+
+	Shuffle Write means it is written to the disk. 
+
+Stage 1 = Shuffle Read is 77.3 MB, Stage 1 will read the data from the disk (stage 0)
+
+
+number of jobs is equal to number of actions.(No of jobs = No of actions)
+
+whenever you use wide transformation then new stage is created.(Stages = Wide transformations + 1)
+
+a task corresponds to each partition.(No of Partitions = No of tasks)
+
+350 mb file.
+350/128 = 3 blocks (wrong answer) (File is not in Hdfs)
+
+File is in Local System.
+and the local block size is 32 mb.
+350/32  = 11 blocks
+and your rdd should have 11 partitions = 11 Tasks
+
+In the DAG of stage 1 you can clearly see that out of 11 nodes only 2 are working and others are sitting idle.
+
+This is happened bcz we have only ERROR,WARN (only 2 groupByKey)
+
+So data is not spread across the cluster no parallelism.
+
+
+reduceByKey
+===========
+
+object LogLevelGrouping extends App {
+Logger.getLogger("org").setLevel(Level.ERROR)
+val sc = new SparkContext("local[*]","wordcount")
+val baseRdd = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/bigLog.txt")
+
+val mappedRdd = baseRdd.map(x => {
+  val fields = x.split(":")
+  (fields(0),1)
+})
+
+mappedRdd.reduceByKey(_+_).collect().foreach(println)
+scala.io.StdIn.readLine()
+}
+
+Visualize the DAG you can clearly see the difference.(localhost:4041) 
+if already some session is running.
+
+reduceByKey do local aggregation
+
+groupByKey do not perform local aggregation. can lead to out of memory error.
+
+
+SESSION 14
+==========
+
+1. pair rdd - tuple of 2 elements
+===========================
+
+("hello",1)
+("hi",1)
+("how",1)
+
+transformations like groupByKey, reduceByKey etc..
+can only work on a pair rdd.
+
+2. Tuple of 2 elements , is this same as a map ?
+=====================================
+
+Map is also (key,value) pair
+Tuple is also (key,value) pair
+
+But Map and Tuple are not same.
+
+In a map we can only have distinct keys.. the same key cannot repeat again.
+
+In a pair rdd the keys can repeat.
+
+("hello",1)
+("hello",1)
+("hello",1)
+("hello",1)
+
+3. To save the output we can use
+===========================
+
+rdd.saveAsTextFile("<the output folder path>")
+
+import org.apache.spark.SparkContext
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+
+object totalspent extends App {
+Logger.getLogger("org").setLevel(Level.ERROR)
+val sc = new SparkContext("local[*]","wordcount")
+val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/customerorders.csv")
+val mappedInput = input.map(x => (x.split(",")(0),x.split(",")(2).toFloat))
+val totalByCustomer = mappedInput.reduceByKey((x,y) => x+y) 
+val sortedResults = totalByCustomer.sortBy(x => x._2)
+  
+sortedResults.saveAsTextFile("/Users/Shubham/Desktop/spark_output1")
+ }
+
+You can see the content of the file from Command Prompt(using linux commands).
+
+Why do we required to this? to save the output in file?
+============================================
+
+Sometimes,when you are working very much huge amount of data in production
+after processing your output may be in terabytes or gegabytes
+
+Consider you use.collect for 1tb output, collect will send the result to driver machine
+Driver machine will crash bcz it will not be able to hold that much of data.
+
+If the results are huge and if you want to use it for later purpose we will ideally
+save it in Hdfs.so that this 1 tb will distrubuted across the machines depending upon block size.
+
+saveAsTextFile is a action just like collect.
+because the execution plan is executed when we call saveAsTextFile
+
+scala.io.StdIn.readLine() = We are using it temporary to see DAG on our local system.
+In the production enviornment hadoop admin will set spark history server where we will be able track all of our 
+previous job.
+In production enviornment we should not use this its a bad practice.
+
+
+
+
+import org.apache.spark.SparkContext
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+
+object totalspent extends App {
+Logger.getLogger("org").setLevel(Level.ERROR)
+val sc = new SparkContext("local[*]","wordcount")
+val input = sc.textFile("/Users/Shubham/Desktop/shared1/DATASETS SPARK/customerorders.csv")
+val mappedInput = input.map(x => (x.split(",")(0),x.split(",")(2).toFloat))
+val totalByCustomer = mappedInput.reduceByKey((x,y) => x+y) 
+val premiumCustomers = totalByCustomer.filter(x => x._2 > 5000)
+val doubledAmount = premiumCustomers.map(x => (x._1,x._2*2))
+doubledAmount.collect.foreach(println)
+println(doubledAmount.count)
+
+scala.io.StdIn.readLine()
+
+//val sortedResults = totalByCustomer.sortBy(x => x._2)
+//sortedResults.saveAsTextFile("/Users/Shubham/Desktop/spark_output1")
+ }
+
+DAG VISUALIZATION OF THIS CODE
+=============================
+
+In the spark UI
+
+inside jobs you will see the actions that you have called.
+
+that means each action is a job in spark UI.
+
+sortByKey is a transformation but still it shows in the jobs beacuse part of sortByKey do some action too.
+So don't get confused if it appears in jobs section.
+
+
+What happens when you call the action multiple times?
+==============================================
+
+whenever you call an action..
+All the transformations from the very beginning are executed.
+
+what happens when you call next actions
+All the transformations from the very beginning are executed.
+
+action3
+again all the transformations from the very beginning are executed.
+
+
+But spark do internal optimization for this
+===================================
+
+Between each stage there is shuffle of data from stage2 - stage3
+Means result were written to the disk from stage2.
+Means output of stage2 is available pn disk2
+Stage3 will take the results from disk and starts processing.
+And only last stage is executed everytime you call action multiple time.
+
+
+SESSION 15
+==========
+
+When you are loading the file from hdfs default block size is 128 MB
+So,No of partitions will depend on 128 MB block size.
+
+When you are loading the file from Local System default block size is 32 MB
+So,No of partitions will depend on 32 MB block size.
+
+No of Blocks = No of Partitions.
+
+But in Session 10 you can clearly see that we are neither loading file from hdfs nor from local system.
+We have created a list in code itself and working on it.
+So how much partitions will be created in this case?
+
+1. sc.defaultParallelism = To check the parallelism level.This property is applicable only load the list in code itself not from local or Hdfs
+		           OR when we say sc.parallelize
+
+2. rdd.getNumPartitions = to check the number of partitions
+
+3 sc.defaultMinPartitions = determine the minimum number of partitions rdd has, when we load from file local or Hdfs.
+
+By default it will set MinPartitions = 2, when any kind of file have partitions less than 1
+For.eg Your Hdfs file is of 100 Mb means 1 block means 1 partitions but still spark will make the minPartitions as 2.
+
+In special cases number of default partiton remains 1 instaed of 2
+======================================================
+
+Familiarity with Spark partitions is very important for Spark performance tuning. 
+This article summarizes the default number of partitions when Spark creates RDD and DataFrame through various functions,
+ which are mainly related to the number of blocks in sc.defaultParallelism, sc.defaultMinPartitions, and HDFS files. 
+In some cases of pit, the default number of partitions is 1.
+
+If the number of partitions is small, then there will be fewer tasks executed in parallel. 
+In special cases, the number of partitions is 1, even if you allocate a lot of Executors, 
+but there is only one Executor that is actually executed. If the data is large, then the task execution will be very large. 
+Slow, it seems to be stuck~, so it is necessary to be familiar with the default number of partitions in various situations for Spark tuning, 
+especially when the number of partitions returned by the operator after the execution is 1, you need to pay special attention. 
+(I have been pitted, I have allocated enough Executor, the default degree of parallelism, and the number of data set partitions before execution, but the number of partitions is still 1)
+
+val input = sc.textFile("/user/cloudera/bigdatacampaign.csv")
+
+input.getNumPartitions
+
+sc.defaultMinPartitions
+
+
+What is the difference between repartition and coalesce?
+===============================================
+
+Increasing the partitions using repartition
+====================================
+
+You have a 500 mb file in hdfs.
+and you have a spark cluster of 20 machines..
+if file size is 500 mb and default block size is 128 mb
+we will have 4 blocks in hdfs.
+and thats why we will have 4 partitions in your rdd.
+
+So,only 4 machines will be used other will not get used at all.
+
+So,is there a way we can increase the number of partitions?
+
+val newRdd = input.repartition(10)
+newRdd.getNumPartitions
+
+For this newRdd you partitions will get increased to 10,so now 10 machines will be used.
+
+For e.g
+======
+val rdd1 = sc.textFile("/user/cloudera/sparkinput/file1")
+val rdd2 = rdd1.flatMap(x => x.split(" ")).repartition(10)
+rdd2.getNumPartitions
+
+we saw repartition can increase the number of partitions.
+
+Decreasing the partitions using repartition
+====================================
+
+Can it decrease? Yes
+
+val latestRdd = newRdd.repartition(1)
+latestRdd.getNumPartitions - Int = 1
+
+When is the requirment to decrease the partitions?
+=============================================
+
+1000 node cluster and you are creating a rdd for this.
+8000 partitions
+with each node holding around 8 partitions.
+
+After that you will be applying so many transformations on this rdd depending upon the use case.Like,
+map
+filter
+filter
+map
+reduce
+
+when we start each partition has 128 mb data.
+
+but when we apply transformation like filter
+
+inside each partition we are left with just few kb's of data(bcz we are filtering and optimizing the things so,data avilable in each partitions will be very less.)
+
+8000 partitions with each holding just few kbs or mbs of data,so many partitions with such less data.
+
+We can reduce the partitions and fill the remaining the partitions with full data,so the system won't need to handle so much of partitions.
+
+rdd.repartition(50)
+
+For.eg
+=====
+val rdd3 = rdd2.map(x => (x,1)).repartition(3)
+rdd3.getNumPartitions 
+
+Output = 3
+Number of partitions have decreased.
+
+
+Repartition
+=========
+Repartition can be used to both increase as well decrease the number of partitions in a rdd.
+
+repartition is a wide transformation because shuffling is involved.
+
+Coalesce
+========
+It can only decrease the number of partitions.
+
+It cannot increase the number of partitions, However if you try increasing it wont give an error. 
+But it wont change the number of partitions.
+
+Coalesce is a tranformation
+and its a narrow transformation.Yes it do shuffling but not full shuffling hence it says avoid shuffling.
+
+For.eg
+
+val rdd1 = sc.textFile("/user/cloudera/sparkinput/file1")
+val newRdd = rdd1.repartition(10)
+val finalRdd = newRdd.coalesce(6)
+finalRdd.getNumPartitions
+output = 6
+
+If you want to decrease the number of partitions 
+========================================
+
+Coalesce or Repartition ?
+
+To decrease the number of partitions coalesce is preferred as it will try to minimize the shuffling.
+
+Consider 4 Node machine with 16 partitions.
+
+N1 - p1, p2, p3, p4
+
+N2 - p5, p6, p7, p8
+
+N3 - p9, p10, p11, p12
+
+N4 - p13, p14, p15, p16
+
+rdd1 has 16 partitions
+
+Appying the repartition transformation = rdd1.repartition(8)
+
+Repartition has a intention to have final partitions of exactly equal size and 
+for this it has to go through complete(full) shuffling.
+It will try to go through all partitions and then repartition it,lots of shuffling.
+
+Appying the coalesce transformation = rdd1.coalesce(8)
+
+Coalesce has a intention to minimize the shuffling and
+combines existing partitions on each machine to avoid a full shuffle.
+
+For e.g
+======
+
+N1 - p1 , p2
+N2 - p3 , p4
+N3 - p5 , p6
+N4 - p7 , p8
+
+Coalese will combine p1, p2, p3, p4 and convert it into p1,p2
+likewise it will do for others so there is no shuffling of data.
+Thats why coalesce is preffered for decreasing the number of partitions.
+
+If you want to increase the number of partitions
+=======================================
+repartition
+
+
+
+PYSPARK EQVIVALENT CODE
+======================
+
+Bigdatacampaign = session 7
+========================
+
+from pyspark import SparkContext
+
+sc = SparkContext("local[*]","KeywordAmount")
+
+initialRdd = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/bigdatacampaign.csv")
+
+mapped_input = initialRdd.map(lambda x:(float(x.split(",")[10]),x.split(",")[0]))
+
+words = mapped_input.flatMapValues(lambda x: x.split(" "))
+
+final_mapped = words.map(lambda x: (x[1].lower(),x[0]))
+
+total = final_mapped.reduceByKey(lambda x,y : x+y)
+
+sorted = total.sortBy(lambda :x[1],False)
+
+result = sorted.take(20)
+
+for x in result:
+    print(x)
+
+
+Boringwords = session 8
+====================
+
+from pyspark import SparkContext
+
+def loadBoringWords():
+    boring_words = set(line.strip()for line in open ("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/boringwords.txt"))
+    return boring_words
+
+
+sc = SparkContext("local[*]","KeywordAmount")
+
+name_set = sc.broadcast(loadBoringWords())
+
+initialRdd = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/bigdatacampaign.csv")
+
+mapped_input = initialRdd.map(lambda x:(float(x.split(",")[10]),x.split(",")[0]))
+
+words = mapped_input.flatMapValues(lambda x: x.split(" "))
+
+final_mapped = words.map(lambda x: (x[1].lower(),x[0]))
+
+filtered_rdd = final_mapped.filter(lambda x: x[0] not in name_set.value)
+
+total = final_mapped.reduceByKey(lambda x,y : x+y)
+
+sorted = total.sortBy(lambda :x[1],False)
+
+result = sorted.take(20)
+
+for x in result:
+    print(x)
+
+
+Accumulator example = session 9
+===========================
+
+from pyspark import SparkContext
+
+def blankLineChecker (line) :
+ 	if (len(line) == 0):
+	myaccum.add(1)
+
+sc = SparkContext("local[*]","KeywordAmount")
+
+myrdd= sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/samplefile.txt")
+
+myaccum = sc.accumulator(0)
+
+myrdd.foreach(blankLineChecker)
+
+print(myaccum.value)
+
+Output = 8
+
+There are two types of accummulator int and float
+Here 0 means int and if you have given 0.0 means float
+myaccum = sc.accumulator(0) 
+
+you can use foreach on a rdd 
+
+but not on a local variable example list
+a = rdd.collect
+
+foreach is a functionality which is avilable in pyspark not in python.
+
+
+LoggingLevelCheck = session 10
+===========================
+
+from pyspark import SparkContext
+
+sc = SparkContext("local[*]", "logLevelCount")
+
+sc.setLogLevel("INFO")
+
+if __name__ == "__main__":
+
+    my_list = ["WARN: Tuesday 4 September 0405",
+    "ERROR: Tuesday 4 September 0408",
+    "ERROR: Tuesday 4 September 0408",
+    "ERROR: Tuesday 4 September 0408",
+    "ERROR: Tuesday 4 September 0408",
+    "ERROR: Tuesday 4 September 0408"]
+
+    original_logs_rdd = sc.parallelize(my_list)
+
+else:
+    original_logs_rdd = sc.textFile("/Users/trendytech/Desktop/data/logsample.txt")
+    print("inside the else part")
+
+new_pair_rdd = original_logs_rdd.map(lambda x:(x.split(":")[0],1))
+
+resultant_rdd = new_pair_rdd.reduceByKey(lambda x,y: x+y)
+
+result = resultant_rdd.collect()
+
+for x in result:
+    print(x)
+
+When you will directly execute it it will print main method.
+
+And when you import this module and then execute it indirectly then it will print else statement.
+
+
+bigLog = session 13
+================
+
+groupbykey
+=========
+
+from pyspark import SparkContext
+
+sc = SparkContext("local[*]", "LogLevelCount")
+
+sc.setLogLevel("INFO")
+
+base_rdd = sc.textFile("/Users/Shubham/Desktop/shared1/DATASET-SPARK2/bigLog.txt")
+
+mapped_rdd = base_rdd.map(lambda x: (x.split(":")[0], x.split(":")[1]))
+
+grouped_rdd = mapped_rdd.groupByKey()
+
+final_rdd = grouped_rdd.map(lambda x: (x[0], len(x[1])))
+
+result = final_rdd.collect()
+
+for x in result:
+    print(x)
+
+
+reducebykey
+==========
+
+from pyspark import SparkContext
+
+sc = SparkContext("local[*]", "LogLevelCount")
+
+sc.setLogLevel("INFO")
+
+base_rdd = sc.textFile("/Users/trendytech/Desktop/data/bigLog.txt")
+
+mapped_rdd = base_rdd.map(lambda x: (x.split(":")[0], 1))
+
+reduced_rdd = mapped_rdd.reduceByKey(lambda x,y: x+y)
+
+result = reduced_rdd.collect()
+
+for x in result:
+    print(x)
+
+
+Miscellaneous things
+=================
+
+1.
+scala
+=====
+
+val a = 1 to 100
+val base = sc.parallelize(a)
+base.reduce((x,y) => x+y)
+
+pyspark
+=======
+
+a = range(1,101)
+base = sc. parallelize(a)
+base.reduce(lambda x,y: x+y)
+
+2.
+input = sc.textFile("/Users/trendytech/Desktop/data/customer-orders.csv")
+input.saveAsTextFile("/Users/trendytech/Desktop/data/output10")
+
+3. Count - this is an action and works the same way as we saw in scala codes.
+
+4. sc.defaultParallelism
+
+Its a property thats why we don't need to give () to this.
+
+5. get the num of partitions in an rdd
+    rdd.getNumPartitions()
+
+6.my_list = ("WARN: Tuesday 4 September 0405",
+"ERROR: Tuesday 4 September 0408",
+"ERROR: Tuesday 4 September 0408",
+"ERROR: Tuesday 4 September 0408",
+"ERROR: Tuesday 4 September 0408",
+"ERROR: Tuesday 4 September 0408")
+
+original_logs_rdd = sc.parallelize(my_list)
+original_logs_rdd.getNumPartitions()
+
+7. sc.defaultMinPartitions - 2
+
+8. repartition
+
+9. coalesce
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

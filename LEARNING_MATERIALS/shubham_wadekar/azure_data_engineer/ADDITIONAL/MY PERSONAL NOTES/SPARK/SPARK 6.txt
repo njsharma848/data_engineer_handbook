@@ -1,0 +1,834 @@
+Spark Optimization Session 12
+=========================
+Broadcast join can be used when we have 1 large table and 1 small table.
+and we want to join these.
+
+Broadcast join is not possible with 2 large datasets.
+
+first,we will see it with rdd's lower level api's.
+
+1.RDD (lower level API's)
+=====================
+
+spark2-shell --conf spark.dynamicAllocation.enabled=false --master yarn --num-executors 6
+--executor-cores 2 --executor-memory 3G --conf spark.ui.port=4063
+
+Here you are giving specific port request of 4063, if it is not available then it will try for next port.
+
+we will have 2 rdd's
+one of them will be large, one of them will be smaller.
+
+BigLogNew.txt = the size of this data is 1.4 GB (Large dataset)
+
+ERROR: Thu Jun 04 10:37:51 BST 2015
+WARN: Sun Nov 06 10:37:51 GMT 2016
+WARN: Mon Aug 29 10:37:51 BST 2016
+ERROR: Thu Dec 10 10:37:51 GMT 2015
+ERROR: Fri Dec 26 10:37:51 GMT 2014
+ERROR: Thu Feb 02 10:37:51 GMT 2017
+WARN: Fri Oct 17 10:37:51 BST 2014
+ERROR: Wed Jul 01 10:37:51 BST 2015
+WARN: Thu Jul 27 10:37:51 BST 2017
+WARN: Thu Oct 19 10:37:51 BST 2017
+
+Normal Join
+==========
+
+val rdd1 = sc.textFile("bigLogNew.txt")
+
+rdd1.getNumPartitions = Int 11
+
+Bcz file size is 1.4 Gb, file is stored in Hdfs and default block size in hdfs is 128mb.
+So, 1.4/128 = 11.
+
+val rdd2 = rdd1.map(x => (x.split(":")(0),x.split(":")(1))
+
+rdd2 is Large
+(ERROR,Thu Jun 04 10:37:51 BST 2015)
+(WARN, Sun Nov 06 10:37:51 GMT 2016)
+
+rdd3 is small.
+("ERROR",0)
+("WARN",1)
+
+we will create a array out of this data and store it as rdd.
+
+val a = Array(
+("ERROR",0),
+("WARN",1)
+)
+
+val rdd3 = sc.parallelize(a)
+
+val rdd4 = rdd2.join(rdd3)
+
+rdd4.saveAsTextFile("joinresults")
+
+(ERROR,(Thu Jun 04 10:37:51 BST 2015,0))
+(WARN, (Sun Nov 06 10:37:51 GMT 2016,1))
+
+In normal join, there are 3 stages, shuffling happened in diff stage so it took almost 1.3 min for joining.
+
+In stage 2, no.of partitions are equal to max of partitions in stage1
+for e.g in stage 1 there are three stages each having different partitions then
+stage having max no of partitions is taken in stage 2.
+
+Now,this has executed as a normal join.
+In this,case shuffling has happened,and it takes a lot of time.
+
+Now we will go with,
+
+Broadcast Join
+============
+broadcast join avoids shuffling.
+
+val keyMap = a.toMap
+val bcast = sc.broadcast(keyMap)
+val rdd1 = sc.textFile("bigLogNew.txt")
+val rdd2 = rdd1.map(x => (x.split(":")(0),x.split(":")(1)))
+val rdd3 = rdd2.map(x => (x._1,x._2,bcast.value(x._1)))
+rdd3.saveAsTextFile("joinresults2")
+
+The bigger rdd is still the same way.
+for small rdd instead of creating it as rdd we are broadcasting it.
+
+In broadcast join there is just single stage and it took only 6 sec to perform the join.
+
+Spark Optimization Session 13
+=========================
+
+2.DataFrame(Structured API's)
+========================
+
+we will have 2 dataframes.
+one of them will be large and other will be small.
+
+orders is 2.6 GB
+customers is around 900 kb
+
+orders - order_customer_id (large)
+customers - customer_id (small)
+
+Normal Join
+==========
+
+spark2-shell --conf spark.dynamicAllocation.enabled=false --master yarn --num-executors 21
+
+val customerDF =
+spark.read.format("csv").option("header",true).option("inferSchema",true).option("path","custom
+ers.csv").load
+
+val orderDF =
+spark.read.format("csv").option("header",true).option("inferSchema",true).option("path","orders.c
+sv").load
+
+you should not use inferSchema in a large datasets beacuse it takes lot of time to infer the schema in real time environment.
+In ordersDF it t=actually launched 21 taks only for inferschema.
+
+Total 4 Job Id
+3 = To infer the schema in orders(21 tasks)
+2 =  for no off partitons in orders
+1 = To infer the schema in customers
+0 = for no off partitons in customers
+
+Spark by default goes with the broadcast join if you want to go through normal join then set this property.
+spark.conf.set("spark.sql.autoBroadcastJoinThreshold",-1)
+
+val joinedDF = customerDF.join(orderDF,customerDF("customer_id") ===orderDF("order_customer_id"))
+
+joinedDF.write.csv("ouput11")
+
+Join will not get executed untill we call an action.
+
+Explianation
+==========
+1. For DataFrames,Datasets,Spark sql
+===============================
+how many partitions are there in this big DF = 21
+and for the small dataframe we have just a single partition.
+
+whenever we do shuffling in case of structured API's we get 200 partitions by default.
+example = if I do groupBy on a Dataframe then we will get 200 partitions after the shuffling is done.
+
+2. For RDD (low level api's)
+======================
+rdd - groupBy then
+before groupBy we had 4 partitions..
+after groupBy the partitions remain the same that means 4 partitions.
+In low level api's number of partitions do not change.
+
+scope of improvment
+==================
+1. Instaed of inferschema we can mention the schema
+2. Use broadcast join.
+
+Spark Optimization Session 14
+=========================
+
+Broadcast Join
+============
+So, let's do two things 
+1. lets not infer the schema and save time.
+2. use a broadcast join.
+
+import org.apache.spark.sql.types._
+
+val ordersSchema = StructType(
+List(
+StructField("order_id",IntegerType,true),
+StructField("order_date",TimestampType,true),
+StructField("order_customer_id",IntegerType,true),
+StructField("order_status",StringType,true)
+)
+)
+
+val customerDF =
+spark.read.format("csv").option("header",true).option("inferSchema",true).option("path","customers.csv").load
+
+val orderDF =
+spark.read.format("csv").schema(ordersSchema).option("header",true).option("path","orders.csv").load
+
+val joinedDF = customerDF.join(orderDF,customerDF("customer_id") ===
+orderDF("order_customer_id"))
+
+joinedDF.take(1000000)
+
+By default it will go with the Broadcast Join.
+
+with normal join it took 2min whereas with broadcast join it took only 1 min.Significant performance gain.
+
+Broadcast is possible only when one dataset/dataframe is small enough to fit in memory of each of the executor.
+
+joinedDF.take(1000000) = This means show 1000000 records on my driver machine.
+Driver machine means machine from which you are executing the commands.
+Driver is of only 450 mb.
+To load the 1000000 records it will need more than 450 mb space
+So, finally it will overhead limit exceeded(out of memory error).
+So,conclusion is be cautious while using collect or take it might give out of memory error.
+If output is huge you should save it in hdfs.
+and if you want to take this much of records then increase the driver memory.
+
+spark2-shell --conf spark.dynamicAllocation.enabled=false --master yarn --num-executors 21
+--driver-memory 4G
+
+increase the --driver-memory when you are collecting more data on driver machine.
+otherwise you will get out of memory error.
+
+Important parameters.
+==================
+
+--num-executors
+--driver-memory
+--executor-memory
+--executor-cores
+
+
+Spark Optimization Session 15
+==========================
+
+1. demo on repartition vs coalesce when we want to decrease the number of partitions. -coalesce
+====================================================================================
+
+when using repartion it involves full shuffling it took almost 22 sec with 2 stage to complete the action.
+But in case of coalesce it took only 10 sec with 1 stage only.
+
+when we are using coalesce then the resultant partitions can be of unequal sizes.
+
+when we are using repartition then full shuffling is involved which is time consuming but we
+know that the resultant partitions will be of similar size.
+
+So,coalesce is a better choice when we want to decrease the number of partitions.
+
+
+2. Client mode vs Cluster mode (understand it again)
+===========================
+
+using spark-submit we will try to submit a job. whle submitting the jar we will see
+a) client
+b) cluster
+
+1. write your code in IDE like eclipse/intelliJ
+2. Click on project --> java --> jar file --> give path
+2. bundle your code as a java jar file and export the jar.
+3. move this jar file to your edge node/gateway machine.
+
+scp wordcount.jar bigdatabysumit@gw02.itversity.com:/home/bigdatabysumit 
+This is secured copy command.
+
+wordcount.jar
+I want to run LogLevelGrouping
+bigLogNew.txt - 1.4 GB (11 partitions)
+To see the sizes of file use command = hadoop fs -ls -h
+
+spark2-submit \
+--class LogLevelGrouping \
+--master yarn \
+--deploy-mode cluster \
+--executor-memory 3G \
+--num-executors 4 \
+wordcount.jar bigLogNew.txt
+
+LogLevelGrouping = Is one of the code file inside wordcount.jar which you exported.
+wordcount.jar = Jar name
+bigLogNew.txt = File which you want to process.
+
+By default deploy mode is client mode.
+Recommended mode for production is cluster mode.
+
+diff between client mode and cluster mode
+=====================================
+Snce the deploy mode is cluster mode that means our driver is running on one of the executors
+residing in the cluster.
+Diver is running on one of the worker node..
+
+In client mode it runs on gateway node.
+
+driver wn02.itversity.com:37973 (cluster) => recommended
+driver gw02.itversity.com:52754 (client)
+
+Client mode
+==========
+spark2-submit \
+--class LogLevelGrouping \
+--master yarn \
+--executor-memory 3G \
+--num-executors 4 \
+wordcount.jar bigLogNew.txt
+
+Spark Optimization Session 16 (Spark Join Optimizations)
+=================================================
+
+We have 2 things which we work for optimizng the join
+
+1. we always want to avoid or minimize the shuffling.
+2. we want to increase the parallelism.
+
+Now there are 2 cases of joins in big data environment
+
+1 large table and 1 small table - broadcast join no shuffling required.
+========================
+
+2 large tables - there is no way to completely avoid the shuffling. but we can think of minimizing it.
+===========
+
+To make sure we shuffle less data what we can do is
+==========================================
+
+Try to filter the data as early as possible before the shuffle, cut down the size before the shuffle
+phase. and do aggregation before.
+Filter & aggregation try to do before the shuffle.
+
+To Increase the Parallelism
+======================
+
+100 node cluster each worker node having 64 GB RAM & 16 CPU Cores.
+
+1. how many cpu cores we are grabbing.
+50 executors with 5 cores each - 250 total cpu cores (at the max 250 tasks)
+
+2. whenever shuffling happens in case of structured API's
+we get 200 partitions after the shuffle.
+spark.sql.shuffle.partitions
+200 partitions - (at the max 200 tasks running in parallel)
+
+3. in your data you have 100 distinct keys..
+after the shuffle only at max 100 partitions will be full and other will be empty.
+whenever the cardinality of data is low then some of the partitions will be empty.
+(at the max 100 tasks will be running in parallel)
+
+
+we grabbed 250 cpu cores (50 executors X 5)
+
+shuffle partitions - 200
+
+we have just 100 distinct keys..
+
+min(Total CPU Cores , Number of Shuffle partitions, Number of Distinct Keys)
+min(250, 200, 100)
+
+i.e 100
+
+you can try increasing the cardinality - salting.
+we can increase the Number of shuffle partitions if required.
+we can try grabbing more resources if feasible
+
+
+Skew Partitions
+============
+Means imbalance of data one partiton might be holding more data and one might be holding less data.
+
+customers table and orders table..
+customers table - customer_id
+orders table - order_customer_id
+
+one of the Customer (APPLE) has placed a lot of orders..
+
+10000000 - 10 million total orders
+9000000 - 9 million orders are just for one customer(APPLE)
+
+same key always goes to same partition.
+
+200 shuffle partitions..
+1 of the partition will be holding majority of data.
+
+which ever task is working on this heavily loaded partition will be very slow.
+and other tasks will complete quickly..
+your job is dependent on the slowest performing task.
+
+there should not be partition skew, else the job will be delayed.
+
+
+Bucketing on join columns
+======================
+orders - order_customer_id
+customers - customer_id
+
+bucketing & sorting on the datasets on join column
+
+orders into 32 buckets.. - 32 files
+customers into 32 buckets.. - 32 files
+
+15 minutes to get the bucketing and sorting done.
+when you try to join these 2 tables it will be very quick.
+
+SMB join - shuffling
+
+if you are not doing bucketing and sorting  and you are doing a plain join
+30 minutes * 1000 days = 30000 minutes
+
+bucketed both the tables on the join column and sorted it.
+
+60 minutes to do bucketing and sorting.
+join - 5 minutes.. * 1000 = 5000 minutes
+SMB join
+
+Spark Optimization Session 17
+=========================
+
+Sort Aggregate vs Hash Aggregate
+============================
+
+orders.csv - 2.6 GB
+
+order_id,order_date,order_customer_id,order_status
+1,2013-07-25 00:00:00.0,11599,CLOSED
+2,2013-07-25 00:00:00.0,256,PENDING_PAYMENT
+3,2013-07-25 00:00:00.0,12111,COMPLETE
+4,2013-07-25 00:00:00.0,8827,CLOSED
+5,2013-07-25 00:00:00.0,11318,COMPLETE
+6,2013-07-25 00:00:00.0,7130,COMPLETE
+7,2013-07-25 00:00:00.0,4530,COMPLETE
+8,2013-07-25 00:00:00.0,2911,PROCESSING
+9,2013-07-25 00:00:00.0,5657,PENDING_PAYMENT
+
+we want to find out the number of orders which are placed by each customer in each month.
+grouping based on order_customer_id and Month - count of number of orders.
+
+spark2-shell --conf spark.dynamicAllocation.enabled=false --master yarn --num-executors 11
+--conf spark.ui.port=4063
+
+val orderDF =
+spark.read.format("csv").option("inferSchema",true).option("header",true).option("path","orders.c
+sv").load
+
+orderDF.createOrReplaceTempView("orders")
+
+spark.sql("select * from orders").show
+
+If we dont get a port after certain number of tries it will fail and give error so in such case we need to give 
+manually port number.
+
+spark.sql("select order_customer_id, date_format(order_date, 'MMMM') orderdt, count(1) cnt,
+first(date_format(order_date,'M')) monthnum from orders group by order_customer_id, orderdt
+order by cast(monthnum as int)").show
+
+first(date_format(order_date,'M')) == Basically 
+
+11599  Jan 1
+11599  Jan 1  -- we dont want this kind of result.
+
+We want all 11599 Jan 278 , so above method will give this kind of result.
+
+and, we want order by Month like (Jan,Feb,..) but you order by simply it will order by alphabetically so you first need
+to give numbers to months and then order by it so it will give expected results.
+
+It took 3.9 minutes to complete this query
+
+Optimization
+===========
+
+spark.sql("select order_customer_id, date_format(order_date, 'MMMM') orderdt, count(1) cnt,
+first(cast(date_format(order_date,'M') as int)) monthnum from orders group by
+order_customer_id, orderdt order by monthnum").show
+
+It took 1.2 minutes to complete this query
+
+In this query instead of casting in the order by we are casting it in select statement.
+
+
+Spark Optimization Session 18
+=========================
+
+Continuation of above session.
+
+Lets try to understand the what happened in background.
+
+spark.sql("select order_customer_id, date_format(order_date, 'MMMM') orderdt, count(1) cnt,
+first(date_format(order_date,'M')) monthnum from orders group by order_customer_id, orderdt
+order by cast(monthnum as int)").explain
+
+It took 3.9 minutes to complete this query - Sort aggregate
+
+spark.sql("select order_customer_id, date_format(order_date, 'MMMM') orderdt, count(1) cnt,
+first(cast(date_format(order_date,'M') as int)) monthnum from orders group by
+order_customer_id, orderdt order by monthnum").explain
+
+It took 1.2 minutes to complete this query - Hash aggregate
+
+2 questions
+==========
+1. difference between sort aggregate and hash aggregate
+2. why in query1 it used sort aggregate and why in query2 it used hash aggregate
+
+1. Difference between sort aggregate and hash aggregate
+===============================================
+
+sort aggregate
+============
+
+customer_id:month value
+1024:january 1 "1"
+1024:january 1 "1"
+1024:january 1 "1"
+1024:january 1 "1"
+1025:january 1 "1"
+1025:january 1 "1"
+
+1 = number of record
+"1" = month value 1
+
+first the data is sorted based on the grouping columns.
+1024:january ,{1,1,1,1,1}
+sorting of data takes time..
+
+2000
+O(nlogn)
+1000 * log(1000)
+1000 * 10 = 10000
+
+For 1000 records it takes 10000 operations
+
+2000 * 11 = 22000
+sort aggregate takes lot of time when the data grows.
+For 2000 records it takes 22000 operations roughly.
+ 
+Hash aggregate
+=============
+
+customer_id:month         value
+1024:january                   3 "1"
+1025:january                   2 "1"
+
+In Hash Aggregate it tries to create key value pairs.
+Key is grouping column and Values are other columns.
+
+If it finds the same key then it just changes the value to 1 then 2 then 3 
+
+no sorting is required.
+additional memory is required to have the hashtable kind of structure.
+
+1000 rows.
+sort aggregate = O(nlogn) = 1000 * 10 = 10000 operations
+hash aggregate = O(n) = 1000 operations
+
+this hash table kind of structure is not a part of container.
+rather this additional memory is grabbed as part of off heap memory.
+this memory is not the part of your jvm.
+so that garbage collection is not required bcz garbage collection takes a lot of time.
+
+
+Question 2: why in the first query it used sort aggregate and why in second query it used hash aggregate.
+======================================================================================
+
+slower - sort aggregate
+===================
+spark.sql("select order_customer_id, date_format(order_date, 'MMMM') orderdt, count(1) cnt,
+first(date_format(order_date,'M')) monthnum from orders group by order_customer_id, orderdt
+order by cast(monthnum as int)").show
+
+
+
+faster - hash aggregate
+====================
+spark.sql("select order_customer_id, date_format(order_date, 'MMMM') orderdt, count(1) cnt,
+first(cast(date_format(order_date,'M') as int)) monthnum from orders group by
+order_customer_id, orderdt").explain
+
+month number was string
+string is immutable
+when we are using hash aggregate we should have mutable types in the values
+means datatype should be able to change beacuse in hash aggregate we are trying to chnage the values then and there.
+So, In hash aggregate you can not use string, so in first query it went with the sort aggregate beacuse we casted it in the order by
+not in select statement.
+So in select statement everything should be mutable in order to use hash aggregate
+
+
+Spark Optimization Session - 19
+==========================
+
+Catalyst optimizer
+===============
+
+Structured API's (DF, DS, Spark SQL) perform better than Raw RDD's
+
+Catalyst optimizer will optimize the execution plan for Structured API's
+
+Rule Based Optimization.
+Many rules are already available. Also if we want we can add our own optimization rules.
+
+Students.csv - 60 mb
+
+student_id,exam_center_id,subject,year,quarter,score,grade
+1,1,Math,2005,1,41,D
+1,1,Spanish,2005,1,51,C
+1,1,German,2005,1,39,D
+1,1,Physics,2005,1,35,D
+1,1,Biology,2005,1,53,C
+1,1,Philosophy,2005,1,73,B
+1,1,Modern Art,2005,1,32,E
+1,1,History,2005,1,43,D
+1,1,Geography,2005,1,54,C
+
+val df1 =
+spark.read.format("csv").option("header",true).option("inferSchema",true).option("path","/Users/t
+rendytech/Desktop/students.csv").load
+
+df1.createOrReplaceTempView("students")
+
+spark.sql("select * from students").show
+
+1. Parsed Logical Plan - un-resolved
+==============================
+
+Our query is parsed and we get a parsed logical plan - unresolved
+it checks for any of the syntax errors in the statement.
+
+If syntax is correct it goes for
+
+2. Resolved/Analysed Logical plan.
+============================
+It will try to resolve the table name the column names etc.
+if the columnname or table name is not available then we will get analysis exception.
+
+if we have referred to the correct columnnames and table name then it goes for
+
+3. Optimized Logical Plan - catalyst optimizer.
+=====================================
+for e.g
+filter push down
+combining of filters
+combining of projections
+
+There are many such rules which are already in place.
+If we want we can add our own rules in the catalyst optimizer 
+
+4. Physical Plan
+=============
+
+consider you are doing a Aggregate.
+as per the logical plan lets say it says we have to do Aggregate.
+
+physical plan1 -- sortAggregate
+
+physical plan2 -- HashAggregate
+
+It will select the physical plan which is the most optimized one with minimum cost.
+This selected physical plan is converted to Lower Level API's RDD code.
+
+Spark Optimization Session - 20
+==========================
+
+Continuation of above session with example.
+
+student_id,exam_center_id,subject,year,quarter,score,grade
+1,1,Math,2005,1,41,D
+1,1,Spanish,2005,1,51,C
+1,1,German,2005,1,39,D
+1,1,Physics,2005,1,35,D
+1,1,Biology,2005,1,53,C
+1,1,Philosophy,2005,1,73,B
+1,1,Modern Art,2005,1,32,E
+1,1,History,2005,1,43,D
+1,1,Geography,2005,1,54,C
+
+spark.sql("select student_id from (select student_id, exam_center_id from students) where
+student_id <5").explain(true)
+
+This query will give you all 3 plans.(Parsed Logical Plan, Analyzed Logical Plan, Optimized Logical Plan)
+Please read all the plans from bottom to top.
+
+
+How to create a DataFrame by loading the data from External Data Source(mysql)
+==================================================================
+
+in mysql we will have a table and we will try to create a dataframe by directly connecting from that.
+
+mysql-connector-java.jar
+
+spark-shell --driver-class-path /usr/share/java/mysql-connector-java.jar
+val connection_url ="jdbc: mysql://cxln2.c.the lab-240901. internal/retail_db"
+val mysql_props = new java.util.Properties
+mysql_props.setProperty("user", "sqoopuser")
+mysql_props.setProperty("password", "NHKkP876rp")
+val orderDF = spark. read.jdbc (connection_url, "orders", mysql_props)
+orderDF.show()
+
+It will connect to MYSQL and create a Dataframe.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

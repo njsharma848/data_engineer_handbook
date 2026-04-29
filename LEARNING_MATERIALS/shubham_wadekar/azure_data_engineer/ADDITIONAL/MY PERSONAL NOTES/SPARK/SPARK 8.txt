@@ -1,0 +1,1311 @@
+Spark Streaming Session - 9
+=======================
+
+batch processing - rdds to dataframes. 
+normal spark streaming to structured streaming. 
+
+Batch processing -> capture the data and save it in a file. we used to process this file at a regular interval/frequency lets say 12 hours. 
+
+15 mins.. -> schedule batch job every 15 mins 
+1 min... -> schedule the batch job every 1 min  
+
+We want to reduce the frequency of processing in streaming, and we store the streaming data in Data Lake -> S3 , HDFS 
+
+Consider a big retail chain Big Bazar.. lot of outlets/stores in various cities. 
+500 different stores across the country. in each store there will be 10 billing counters. 
+
+10 am - 9 pm open timings 
+
+every 15 mins we want to calculate the total sales across all the stores of big bazar. 
+every 15 minutes lets say we get a new file in our data lake 
+
+10:00 - 10:15 - 2 lakh 
+10:15 - 10:30 - 5 lakh (2+3)
+10:30 - 10:45 - 8 lakh (5+3)
+10:45 - 11:00 - 9 lakh (8+1)
+whatever transactions happen from 10 am to 10:15 am - there is no guarantee that during our 10:15 batch it will be processed. 
+
+for a transaction to reach from outlet to a distributed data store like hdfs will take time. 
+some of the records might arrive late.. 10:10 (when the order was placed) -> 10:18 (reached to data lake) 
+
+at 10:30 am you want to execute batch 2.
+what if the batch 1 is still running? what if one of the batch fails how to handle that? 
+
+stream processing is more complicated than batch processing. 
+
+Reducing duration between the batches is what we are looking at. 
+
+micro batch processing. 
+
+Spark streaming takes care of all the issues we talked about. 
+1. automatic looping between the batches. 
+2. storing intermediate results. 
+3. combining results to previous batch result. 
+4. restart from same place in case of any failure - fault tolerance.
+
+spark streaming (Dstream) -- built on top of Rdd's -- we were using lower level constructs.
+
+Limitations with lower level constructs
+================================
+1. Lack of spark sql engine optimization 
+2. Only support processing time semantics and do not support event time semantics. 
+    invoice was created at 10:10 - event time. processing time is the time when this event reached spark.. 10:18 - processing time. 
+3. No further upgrades and enhancements expected, spark community won't update anything.
+
+Spark structured streaming API
+=========================
+1. Offers unified model for batch and stream processing. 
+2. Runs over the spark sql engine, takes advantage of the sql based optimizations.
+3. Native support for event time semantics. 
+4. Further enhancements are expected.
+
+
+Spark Streaming Session - 10
+=======================
+
+import org.apache.spark.SparkContext
+import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.Seconds
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.sql.SparkSession
+
+object Df7 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)  
+  
+val spark = SparkSession.builder()
+.master("local[2]")
+.appName("My Streaming Application")
+.getOrCreate()
+
+//1. read from the stream
+val linesDf = spark.readStream
+.format("socket")
+.option("host","localhost")
+.option("port","12345")
+.load()
+
+linesDf.printSchema()
+
+//2. process
+val wordsDf = linesDf.selectExpr("explode(split(value,' ')) as word")
+val countsDf = wordsDf.groupBy("word").count()
+
+//3. write to the sink
+
+val wordCountQuery = countsDf.writeStream
+.format("console")
+.outputMode("complete")
+.option("checkpointLocation","checkpoint-location1")
+.start()
+
+wordCountQuery.awaitTermination()
+
+}
+
+explode(split(value,' ')) as word) 
+
+split will always give you an array.  
+Split -> [hello, hello, how, are, you] 
+
+explode on the array to get each word in a different row.
+ 
+hello 
+hello 
+how 
+are 
+you
+
+
+Spark Streaming Session - 11
+========================
+
+While processing the very small amount of data the system is creating the 200 partitions beacuse shuffle is
+happening beacuse of group by, but for a very small amount of data we dont want this much of partitions.
+So, we need to mention the partitions to be used.
+
+Delete the check-point directory while running the program, if not then it can give error.
+
+val spark = SparkSession.builder()
+.master("local[2]")
+.appName("My Streaming Application")
+.config("spark.sql.shuffle.partitions",3)
+.getOrCreate()
+
+DataStream writer allows 3 output modes: 
+1. append 
+2. update - insert and update 
+3. complete - from starting till the end
+
+//3. write to the sink
+val wordCountQuery = countsDf.writeStream
+.format("console")
+.outputMode("complete")
+.option("checkpointLocation","checkpoint-location1")
+.start()
+
+Complete Mode -  from starting till the end
+===================================
+hello how are you 
+(hello,1) 
+(how,1) 
+(are,1) 
+(you,1) 
+
+hello sumit this side 
+(hello,2)
+(sumit,1) 
+(this,1) 
+(side,1)
+(how,1) 
+(are,1) 
+(you,1) 
+
+Update Mode - Insert and Update
+===========================
+hello how are you 
+(hello,1) 
+(how,1) 
+(are,1) 
+(you,1)
+
+hello sumit this side
+(hello,2)
+(sumit,1)
+(this,1)
+(side,1)
+
+hello is updated and only new words are there old words are gone.
+
+Append Mode - 
+===========
+hello how are you 
+(hello,1) 
+(how,1) 
+(are,1) 
+(you,1)
+
+hello sumit this side
+(sumit,1)
+(this,1)
+(side,1)
+
+Only new words will be there, no updates and insert.
+
+that's why when we do aggregations append mode is not allowed. 
+spark is intelligent enough to give error when it sees that operation does not make sense.
+
+Analysis exception - append output mode is not supported with streaming aggreagations.
+
+Ideally a spark application should run forever but it can stopped under following conditions.
+==========================================================================
+1. we manually stop it - kill it (maintainance) 
+2. Exception
+
+But we want our spark streaming application to stop and then restart gracefully.
+
+val spark = SparkSession.builder()
+.master("local[2]")
+.appName("My Streaming Application")
+.config("spark.sql.shuffle.partitions",3)
+.config("spark.streaming.stopGracefullyOnShutdown","true")
+.getOrCreate()
+
+So,how the above program works from previous session
+=============================================
+
+whenever we call start() 
+spark driver will take the code from readStream to writeStream and submits it to spark sql engine. 
+
+what spark sql engine will do? 
+analyse it, optimize it and then compile it to generate the execution plan. 
+execution plan is made of stages and tasks. 
+spark will then start a background thread to execute it. and this thread will start a new job to repeat the processing and writing operations.
+
+each job is a micro batch. 
+
+loop is created and managed by the background process/thread. 
+
+This goes on forever. 
+
+we have seen that whenever we type some words in terminal, then in spark UI we see a new job created. 
+
+whats the triggering point of a new micro batch? trigger for each record or is it time based? 
+===========================================================================
+Data Stream writer allows us to define the trigger.
+
+
+Spark Streaming Session - 12
+========================
+
+whats the triggering point of a new micro batch? trigger for each record or is it time based? 
+===========================================================================
+Data Stream writer allows us to define the trigger.
+
+1. Unspecified
+============
+New microbatch is triggered as soon as current microbatch finishes.
+However microbatch will wait for new input data, if there is no new data then no batch will be created
+It will be only created when you give someinput data.
+
+2. Time Interval 
+=============
+example 5 mins.
+
+First trigger will start immediately. second microbatch will begin when the first mircobatch  is finished and the time is elapsed,
+means after 5 mins.
+
+A. Case when the first microbatch finishes in less than 5 mins
+=================================================
+If the first microbatch finishes in 15 seconds then second mircobatch has to wait for 4 mins 45 seconds to get triggered.
+
+B. case when the first microbatch takes more than 5 mins to process
+======================================================== 
+if there is any new data then the new microbatch will trigger immediately after the first microbatch is finished
+
+//3. write to the sink
+val wordCountQuery = countsDf.writeStream
+.format("console")
+.outputMode("complete")
+.option("checkpointLocation","checkpoint-location1")
+.trigger(Trigger.ProcessingTime("30 seconds"))
+.start()
+
+3. One time
+==========
+It is like batch processing. you can spin up a cluster in cloud and process this data. 
+this will keep at track of all what is processed earlier and this will only process the new data.. 
+it will maintain the previous state and will keep a track of data which is already processed. 
+
+4. continuous - expiremental 
+=======================
+(milli second latency)
+
+
+Spark Streaming Session - 13
+========================
+
+Spark streaming offers 4 built in data sources. 
+
+1. Socket Source - you read the streaming data from a socket (IP + port). 
+==============
+If your producer is producing at a very fast pace and writing to socket.
+If your consumer is reading from the above socket at a slower pace then we can have data loss. 
+This socket source is not meant for production use cases, as we can end up with data loss.
+
+2 Rate Source -  used for testing and benchmarking purpose. 
+============
+If you want to generate some test data then you can generate a configurable number of key value pairs. 
+
+3. File source - you will basically have a folder (directory) new files are detected in this directory and processed. (widely used 1)
+===========
+
+4. Kafka source - we will talk about it later when we learn Kafka.(widely used 2)
+============
+
+File Source - example - Input will be file, output will also be file.
+=================
+
+import org.apache.spark.SparkContext
+import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.Seconds
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.sql.SparkSession
+
+object Df7 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)  
+  
+val spark = SparkSession.builder()
+.master("local[2]")
+.appName("My Streaming Application")
+.config("spark.sql.shuffle.partitions",3)
+.config("spark.streaming.stopGracefullyOnShutdown","true")
+.config("spark.sql.streaming.schemaInference","true")
+.getOrCreate()
+
+//1. read from the stream
+val linesDf = spark.readStream
+.format("json")
+.option("path","myinputfolder")
+.load()
+
+
+//2. process
+ordersDf.createOrReplaceTempView("orders")
+
+val completedOrders = spark.sql("select * from orders where order_status = 'COMPLETE'")
+
+//3. write to the sink
+
+val ordersQuery = completedOrders.writeStream
+.format("json")
+.outputMode("append")
+.option("path","myoutputfolder")
+.option("checkpointLocation","checkpoint-location1")
+.trigger(Trigger.ProcessingTime("30 seconds"))
+.start()
+
+ordersQuery.awaitTermination()
+
+}
+
+I will be getting new files in my input folder and my task is to filter the completed orders and put it in a output file.
+
+create one myinputfolder in src - and paste your files inside that folder so that it can be processed.
+
+
+Now there are certain options
+========================
+
+.option("maxFilesPerTrigger",1)
+==========================
+
+//1. read from the stream
+val linesDf = spark.readStream
+.format("json")
+.option("path","myinputfolder")
+.option("maxFilesPerTrigger",1)
+.load()
+
+So it will process only one file at a time, after 30 sec it will process another file, ....
+
+You can see this on localhost:4040/jobs/
+
+In the check-point folder, it will create a file for each job and it will tell for each job which file it read.
+
+Over the time the number of files in the directory will keep on increasing.(Input File)
+if we have a lot of files in folder then it will keep on becoming difficult or time consuming. 
+that is why it is recommended to clean up the older files as and when required.
+
+Option - cleanSource and sourceArchiveDir are often used together.
+
+Option - cleanSource and sourceArchiveDir
+===================================
+cleanSource takes 2 values archive and delete
+
+.option("cleanSource","delete")
+It will delete all the processed file, so that your directory will be clean for new files.
+
+.option("cleanSource","archive")
+.option("sourceArchiveDir","Name-of-archive-dir")
+Dumping the processed file into some other directory. These two will go together.
+sourceArchiveDir will move all the processed file into the given path of directory.
+
+Remember that going with any of the above will increase the processing time.
+
+if your expected time to process is very quick then you should avoid using any of the above.
+
+In such cases you can have your own batch job scheduled which will take care of this cleanup.
+if your older processed files are not removed from the folder then it will adversely affect the performance.
+
+
+Spark Streaming Session - 14
+=======================
+
+import org.apache.spark.SparkContext
+import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.Seconds
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.sql.SparkSession
+
+object Df7 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)  
+  
+val spark = SparkSession.builder()
+.master("local[2]")
+.appName("My Streaming Application")
+.config("spark.sql.shuffle.partitions",3)
+.config("spark.streaming.stopGracefullyOnShutdown","true")
+.config("spark.sql.streaming.schemaInference","true")
+.getOrCreate()
+
+//1. read from the stream
+val linesDf = spark.readStream
+.format("json")
+.option("path","myinputfolder")
+.load()
+
+
+//2. process
+ordersDf.createOrReplaceTempView("orders")
+
+val completedOrders = spark.sql("select count(*) from orders where order_status = 'COMPLETE'")
+
+//3. write to the sink
+
+val ordersQuery = completedOrders.writeStream
+.format("console")
+.outputMode("complete")
+.option("path","myoutputfolder")
+.option("checkpointLocation","checkpoint-location3")
+.trigger(Trigger.ProcessingTime("15 seconds"))
+.start()
+
+ordersQuery.awaitTermination()
+
+}
+
+Checkpoint directory will keep a track of files processed and running total.
+
+In this session we will look at..
+
+Fault tolerance and exactly once Guarantee
+====================================
+Ideally a streaming application should run forever.
+
+It should stop under two conditions.
+1. Exception 2. Maintainance activities
+
+But whenever it is stooped, our application should be able to stop and restart gracefully.
+
+So, what does gracefully means, This means to maintain exactly once semantics.
+1. Do not miss any input record. 
+2. Do not create duplicate output records.
+
+Spark Structured steaming provides ample support for this. 
+
+It maintains state of the microbatch in the checkpoint location. 
+Checkpoint location helps you to achieve fault tolerance. 
+
+Checkpoint location mainly contains 2 things: 
+1. read positions - which all files are already processed 
+2. state information - running total
+
+Spark Structured streaming maintains all information it requires to restart the unfinished microbatch.
+
+To guarantee exactly once 4 requirements should be met
+==============================================
+
+1. Restart application with same checkpoint location
+===========================================
+lets say in 3rd microbatch we got an exception. In commits we would have 2 commits.
+means 2 files are already processed so, after exception it should satrt from 3rd microbatch.
+
+Checkpoint location mainly contains 2 things: 
+1. read positions - which all files are already processed 
+2. state information - running total
+
+2. Use a replayable source
+======================
+Consider there are 100 records in 3rd microbatch. 
+after processing 30 records it gave some exception. 
+These 30 records should be availble to you when you start reprocessing. because commit has not happened only for that 30 records.
+Replayable means we can still get the same data which is processed earlier.
+
+when we are using socket source then we cannot get older data back again. so socket source is not replayable.
+
+kafka, file source both of them are replayable.
+
+3. Use deterministic computation
+===========================
+We use should use deterministic computation to get exactly once gurantee.
+
+Deterministic function e.g - sqrt(4) = 2 , it will always be 2 it will never change.
+Not Deterministic function = dollarsToRs(10) - 720 after some days it might be 738
+
+lets say our 3rd microbatch has 100 records. while processing 30th record we got an error. 
+whenever we start again it will start from beginning of 3rd microbatch and these 30 records are also processed again. 
+The output should remain same.
+
+4. use an idempotent sink
+=====================
+lets say our 3rd microbatch has 100 records. while processing 30th record we got an error. 
+whenever we start again it will start from beginning of 3rd microbatch and these 30 records are also processed again. 
+
+dont you feel that we are processing these 30 records 2 times? 
+we are writing this to output 2 times.
+
+2nd time when you are writing the same output it should not impact us.
+
+Either it should discard the 2nd output or it should overwrite the 1st ouput with the 2nd one.
+
+what we learn till now
+==================
+sources(place from where we read the input) - socket, file, kafka 
+
+sink(place where we write the output) - console, file, kafka 
+
+output modes - append, complete, update
+
+triggers - unspecified, time interval,one time, continuous
+
+checkpoint - state information, read information
+
+fault tolerance - exactly once guarantee (checkpoint and we need to follow the 4 above conditions)
+                        - 1. Restart application with same checkpoint location, 2. Use a replayable source,
+                          3. Use deterministic computation, 4. use an idempotent sink
+
+
+Spark Streaming Session - 15
+=======================
+
+Stateful vs Stateless transformations.
+==============================
+
+Stateless
+========
+select, filter, map, flatMap, explode 
+these transformations work only with the current microbatch and have nothing to do with the history.
+
+Stateful 
+====== 
+Last state is maintained in a state store. grouping and aggregations cannot work without history. 
+so these kind of transformations rely on state informaiton or the history
+
+Note - stateless transformation do not support complete output mode.
+
+for e.g for - map,select 
+
+10000 input records -- 10000 output records
+It is not efficient to store these 10000 records in state store
+But after aggregations these records might come down to 50 records so, that is possible.
+remembering the state of the query is not effecient.
+
+When we are using stateful transformations we are storing the state (history) in state store. 
+Excessive state can cause out of memory exception. 
+Because the state is maintained in the memory of the spark executors.
+
+checkpoint directory.. (position + state information) and ideally it will be stored on hdfs.
+
+state information is stored in checkpoint directory to handle fault tolerance. 
+same state information which is present in this file will be maintained in executor memory for quick lookups.
+
+we should be careful when we deal with stateful operations because if the history or the state keeps on growing 
+it can lead to out of memory error(executor memory will get full).
+
+Spark offers us 2 kinds of stateful operations.
+====================================
+
+1. Managed stateful operations
+==========================
+spark manages on how to clean up the state store.
+
+2. unManaged stateful operations
+===========================
+where we as developer decide on when to cleanup the state store. 
+we write our custom cleanup logic. scala/java but still it's not present in python.
+
+
+Aggregations are of 2 types.
+=======================
+
+1. Continuous aggregations
+=======================
+you purchase your grocery from Big Bazar on purchase of 100 Rs you get 1 reward point.
+these reward points never expire. (Unbounded) 100 million customers.
+every month they are getting 1 million new customers. 
+history in state store will keep on growing. 
+In such cases where we have unbounded things we can think of unmanaged stateful operations to do the cleanup.
+
+2. Time Bound Aggregations - One month window. The reward points expire after one month. 
+=======================
+In such cases spark can help us to clean the state store. 
+because any data before 1 month can be cleaned up. 
+Managed stateful operations where spark will work on the cleanup logic. 
+spark can clear the state for previous month and start again. 
+
+So, all the time bound aggregation are best for spark to manage the cleanup. 
+Time bound aggregates are also known as window aggregates.
+
+
+There are 2 types of windows
+=========================
+
+1. Tumbling time window - a series of fixed size, non overlapping time interval.
+=====================
+
+Time-interval will be same between the window.
+None of these windows are overlapping.
+
+10 - 10:15 
+10:15 - 10:30 
+10:30 - 10:45 
+10:45 - 11
+
+2. Sliding time window - a series of fixed size, overlapping window.
+===================
+
+10 - 10:15 
+10:05 - 10:20 
+10:10 - 10:25
+
+The window size is 15 minutes and the sliding interval is 5 minutes.
+
+Spark Streaming Session - 16
+========================
+
+The aggregation windows are based on event time and not on trigger time.
+
+Big Bazar 
+{"order_id":57012,"order_date":"2020-03-02 11:05:00","order_customer_id":2765,"order_status":"PROCESSING", "amount": 200}
+
+Event time is 11:05 
+This event might reach to spark lets say at 11:20, so Trigger Time is 11:20
+
+Lets say Amount of sales every 15 minutes.
+so, we can use Tumbling window
+
+11 - 11:15 
+11:15 - 11:30
+11:30 - 11:45 
+11:45 - 12
+
+The orders will be placed in a window, according to th event time.
+for e.g there was order at 11:10 it will be placed in 11:00 - 11:15 window.
+
+Now, lets say event time is 11:14 (the order was placed at 11:14) 
+this order reached quite late to spark lets say at 11:50
+so, what happens to late records?
+
+
+Code
+====
+
+import org.apache.spark.SparkContext
+import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.Seconds
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.StructField
+
+object Df7 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)  
+  
+val spark = SparkSession.builder()
+.master("local[2]")
+.appName("Streaming Word Count")
+.config("spark.streaming.stopGracefullyOnShutdown","true")
+.config("spark.sql.shuffle.partitions",3)
+.getOrCreate()
+
+//Defining the own order schema
+val orderSchema = StructType(List(
+    StructField("order_id", IntegerType),
+    StructField("order_date", StringType),
+    StructField("order_cusyomer_id", IntegerType),
+    StructField("order_status", IntegerType),
+    StructField("amount", StringType)
+    ))
+    
+//1. read from the stream
+val ordersDf = spark.readStream
+.format("socket")
+.option("host","localhost")
+.option("port","12345")
+.load()
+
+//2. process
+
+//To extract the values from json file and imposing our own schema on the top of that.
+val valueDf = ordersDf.select(from_json(col("value"), orderSchema).alias("value"))
+
+//valueDf.printSchema()
+
+// we can directly take column name and query instead of value.column name(value is alias name)
+val refinedOrdersDf = valueDf.select("value.*")
+
+//valueDf.printSchema()
+
+//Tumbling Window
+val windowAggDf = refinedOrdersDf.groupBy(window(col("order_date"),"15 minute"))
+.agg(sum("amount").alias("totalInvoice"))
+
+val outputDf = windowAggDf.select("window.start","window.end","totalInvoice")
+
+//write to the sink
+
+val ordersQuery = outputDf.writeStream
+.format("console")
+.outputMode("update")
+.option("checkpointLocation","checkpoint-location1")
+.trigger(Trigger.ProcessingTime("15 second"))
+.start
+
+ordersQuery.awaitTermination()
+
+}
+
+The state store maintains this info
+============================
+
+2020-03-02 11:00:00|2020-03-02 11:15:00| 900| 
+2020-03-02 11:15:00|2020-03-02 11:30:00| 1500| 
+2020-03-02 11:30:00|2020-03-02 11:45:00| 500| 
+2020-03-02 11:45:00|2020-03-02 12:00:00| 400|
+
+Late arriving records update the state store.
+
+If we want to deal with late coming records. Then we wont be able to clean the state store. 
+And we have to maintain all the state. The reason we have to maintain the state is to tackle late coming records
+
+
+
+Spark Streaming Session - 17
+========================
+
+To deal with late coming records. 
+There is a concept with the name watermark what is a watermark? 
+
+It is like setting an expiry date to a record. 
+The business says that we are looking for 99.9% accuracy. 
+99.9% of your records are never late than 30 minutes 
+.1% of the transactions we might receive after 30 minutes 
+
+In 1000 events... 1 event can arrive later than 30 minutes. 
+999 events arrive before 30 minutes. 
+
+In such a senario we can safely discard the event which arrive later than 30 minutes. 
+The state information should not be maintained for windows which are before the watermark duration.
+
+.withWatermark(eventTime, delayThreshold)
+.withWatermark("order_date", "30 minute")
+
+Code
+====
+
+object Df7 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)  
+  
+val spark = SparkSession.builder()
+.master("local[2]")
+.appName("Streaming Word Count")
+.config("spark.streaming.stopGracefullyOnShutdown","true")
+.config("spark.sql.shuffle.partitions",3)
+.getOrCreate()
+
+//Defining the own order schema
+val orderSchema = StructType(List(
+    StructField("order_id", IntegerType),
+    StructField("order_date", TimeStampType),
+    StructField("order_cusyomer_id", IntegerType),
+    StructField("order_status", IntegerType),
+    StructField("amount", StringType)
+    ))
+    
+//1. read from the stream
+val ordersDf = spark.readStream
+.format("socket")
+.option("host","localhost")
+.option("port","12345")
+.load()
+
+//2. process
+
+//To extract the values from json file and imposing our own schema on the top of that.
+val valueDf = ordersDf.select(from_json(col("value"), orderSchema).alias("value"))
+
+//valueDf.printSchema()
+
+// we can directly take column name and query instead of value.column name(value is alias name)
+val refinedOrdersDf = valueDf.select("value.*")
+
+//valueDf.printSchema()
+
+//Tumbling Window
+val windowAggDf = refinedOrdersDf
+.withWatermark("order_date", "30 minute")
+.groupBy(window(col("order_date"),"15 minute"))
+.agg(sum("amount")
+.alias("totalInvoice"))
+
+val outputDf = windowAggDf.select("window.start","window.end","totalInvoice")
+
+//write to the sink
+
+val ordersQuery = outputDf.writeStream
+.format("console")
+.outputMode("update")
+.option("checkpointLocation","checkpoint-location1")
+.trigger(Trigger.ProcessingTime("15 second"))
+.start
+
+ordersQuery.awaitTermination()
+
+}
+
+watermark boundary = max(event time) - watermark 
+
+max(event time) = The time at which event occours
+watermark = Timeframe you mentioned in the code.
+
+each microbatch ends up doing 3 things
+================================
+1. update the state store 
+2. cleanup the state store
+3. send the output to the sink. 
+
+Remember that 
+=============
+1. watermark is the key to clean our state store. 
+2. events within the watermark are taken - this is guaranteed. 
+3. events outside the watermark may or may not be taken.
+
+
+Spark Streaming Session - 18 
+========================
+
+State store cleanup
+===============
+1. setting a watermark 
+2. using an appropriate output mode. 
+
+we have 3 different output modes - 1. complete 2. update 3. append
+
+In case of Tumbling Window
+=======================
+
+complete ouput mode will not allow us to clean the state store. 
+complete mode for windowing aggregates has side effect on state store cleaning.
+beacuse for complete mpode you have to maintain the previous records.
+so, you can either go with watermark or complete mode, 
+if you defined the both complete mode will be considered, watermark will be ignored.
+
+update mode is the most useful and efficient mode.
+
+append mode is not allowed on window aggregates,you should use it when we are sure that there are no updates.
+
+But you can use append mode with watermark, so in this case
+spark allows to use append mode when we are using watermarks on event time.
+you will not get any output console till your window gets closed which is of 15 minutes in this case,which is calculated based on
+watermark boundry.it will wait to output the results to the sink.
+this window information will only be printed once this window expired.
+After this outputs the result to the sink, it will clean the state-store memory.
+
+The only downside is
+append mode can work when we set watermarks but the only downside is that 
+we have to wait atleast for the watermark duratiton (whenever the window expires then only it will ouput the results to the sink)
+
+append mode will supress the output of window aggregates unless they cross watermark boundary.
+
+In case of Sliding Window
+=====================
+
+//Sliding Window
+val windowAggDf = refinedOrdersDf
+.withWatermark("order_date", "30 minute")
+.groupBy(window(col("order_date"),"15 minute","1 minute"))
+.agg(sum("amount")
+.alias("totalInvoice"))
+
+.groupBy(window(col("order_date"),"15 minute","1 minute"))
+added the sliding window interval of 1 minute
+
+11 - 11:15 
+11:05 - 11:20
+
+
+Spark Streaming Session - 19
+========================
+
+Streaming joins
+============
+
+Structured streaming supports 2 kind of joins.
+=====================================
+1. Streaming Dataframe to static dataframe. 
+2. Streaming dataframe with another streaming dataframes.
+
+1. Streaming Dataframe to static dataframe - Inner Join
+=============================================
+Lets consider an example from banking domain. 
+we swipe our card at some pos terminals.
+ 
+whenever I swipe my card a transaction will be generated
+Data Format - JSON data. 
+Column Name - card_id, amount, postal code, pos_id, transaction time.
+
+Streaming Dataframe
+=================
+Data got from transaction - 
+{"card_id":5572427538311236,"amount":5358617,"postcode":41015,"pos_id":970896588019984,"transaction_dt":"2018-10-21 04:37:42"}
+
+Now we have enrich this transaction in real time, means join some other columns.
+Column names to be join -card_id,member_id,card_issue_date,country,state
+
+Static Dataframe
+==============
+Data to be Joined - 
+card_id,member_id,card_issue_date,country,state 
+5572427538311236,976740397894598,2014-12-15 08:06:58.0,United States,Tonawanda
+
+Now, we have to join this Streaming Dataframe with Static Dataframe.
+
+Code
+====
+
+import org.apache.spark.SparkContext
+import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.Seconds
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.StructField
+import org.apache.spark.sql.types.LongType
+import org.apache.spark.sql.types.TimestampType
+
+object Df7 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)  
+  
+val spark = SparkSession.builder()
+.master("local[2]")
+.appName("Streaming Word Count")
+.config("spark.streaming.stopGracefullyOnShutdown","true")
+.config("spark.sql.shuffle.partitions",3)
+.getOrCreate()
+
+//Defining the own order schema (required dataset.txt)
+val transactionSchema = StructType(List(
+    StructField("card_id", LongType),
+    StructField("amount", IntegerType),
+    StructField("postcode", IntegerType),
+    StructField("pos_id", IntegerType),
+    StructField("transaction_dt", TimestampType)
+    ))
+    
+//1. read from the stream
+val transactionDf = spark.readStream
+.format("socket")
+.option("host","localhost")
+.option("port","12345")
+.load()
+
+//2. process
+
+//1. Load the streaming dataframe.
+
+//To extract the values from json file and imposing our own schema on the top of that.
+val valueDf = transactionDf.select(from_json(col("value"),transactionSchema).alias("value"))
+
+//valueDf.printSchema()
+
+// we can directly take column name and query instead of value.column name(value is alias name)
+val refinedTransactionDf = valueDf.select("value.*")
+
+//refinedTransactionDf.printSchema()
+
+//2. load the static dataframe (saved in the file)
+val membersDf = spark.read
+.format("csv")
+.option("header",true)
+.option("inferSchema",true)
+.option("path,"F:\TRENDYTECH\WEEK 16 SPARK STREAMING 2\DATASETS\requireddataset-210102-161329.zip"
+
+val joinExpr = refinedTransactionDf.col("card_id") === membersDf.col("card_id")
+
+val joinType = "inner"
+
+val enrichedDf = refinedTransactionDf.join(membersDf,joinExpr,joinType)
+.drop(membersDf.col("card_id"))
+    
+// write to the sink
+
+val transactionQuery = enrichedDf.writeStream
+.format("console")
+.outputMode("update")
+.option("checkpointLocation","checkpoint-location1")
+.trigger(Trigger.ProcessingTime("15 second"))
+.start
+
+transactionQuery.awaitTermination()
+
+}
+
+
+Spark Streaming Session - 20
+========================
+
+Inner join is possible and we saw that in previous session.
+
+Full outer join is not supported.
+
+Left outer join is possible 
+=====================
+only if left side is a stream and right side is static df.
+
+Right outer join is possible
+======================
+only if right side is a stream and left side is static. 
+
+streaming (Consider First two are matching and third one is non-matching)
+=========
+{"card_id":5572427538311236,"amount":5358617,"postcode":41015,"pos_id":970896588019984,"transaction_dt":"2018-10-21 04:37:42"} 
+{"card_id":5572427538311236,"amount":356492,"postcode":53149,"pos_id":160065694733720,"transaction_dt":"2018-09-22 05:21:43"} 
+
+{"card_id":55724275383112300,"amount":5358617,"postcode":41015,"pos_id":970896588019984,"transaction_dt":"2018-10-21 04:37:42"}
+
+Static
+=====
+5572427538311236,976740397894598,2014-12-15 08:06:58.0,United States,Tonawanda 
+5134334388575160,978465390240911,2012-10-17 11:55:14.0,United States,Kankakee 
+5285400498362679,978786807247400,2014-01-08 03:31:52.0,United States,Fallbrook
+
+Left outer Join
+============
+all the matching records + all the non matching records from left table padded with nulls on the right.
+
+You know how map-side join works
+
+if left table is small and right table is bigger than right outer is possible.
+if right table is small and left table is bigger than left outer join is possible..
+
+in hive the small table is equivalent to the static dataframe in spark
+
+the left table is : refinedTransactionDf (streaming) 
+the right table is : memberDF (static)
+
+So, streaming df on left and static on the right
+
+so, leftouter is possible. rightouter is not possible.
+
+--Eroor -- Right outer join with a streaming DataFrame/Dataset on the left and a static DataFrame/DataSet on the right not supported;
+
+val joinType = "leftouter"
+
+val joinType = "rightouter"
+
+
+Spark Streaming Session - 21
+========================
+
+stream to static join are stateless - as one side of the join is completely knows in advance. So there is no need to maintain any state.
+
+2. Streaming dataframe with another streaming dataframes.
+=================================================
+Stream to Stream join - this is a stateful join. the state has to be maintained in the state store.
+
+The challenge of generating join results between two data streams is that, 
+at any point of time, the view of the dataset is incomplete for both the sides of the join.
+This will make it very hard for us to find matches between inputs.
+
+Both the input streams have to be buffered in the state store.
+It will continously check for a match when new data arrives. 
+
+Ideally the best practise is to clean the state store. else we will run into out of memory issues.
+
+Inner Join
+========
+if lets say 100 people view the ad then impression is 100 
+out of 100 people who viewed might be lets 3 people click on it.
+clicks - 3 i.e 3% 
+
+There are 2 kind of events that are happening 
+1. impression 
+2. click 
+
+We need to make sure we clean the state store to avoid out of memory issues.
+
+Code for joining two Streaming dataframe
+==================================
+
+import org.apache.spark.SparkContext
+import org.apache.spark.streaming.StreamingContext
+import org.apache.spark.streaming.Seconds
+import org.apache.log4j.Level
+import org.apache.log4j.Logger
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.StructField
+import org.apache.spark.sql.types.LongType
+import org.apache.spark.sql.types.TimestampType
+
+object Df7 extends App {
+  
+Logger.getLogger("org").setLevel(Level.ERROR)  
+  
+val spark = SparkSession.builder()
+.master("local[2]")
+.appName("Streaming Word Count")
+.config("spark.streaming.stopGracefullyOnShutdown","true")
+.config("spark.sql.shuffle.partitions",3)
+.getOrCreate()
+
+//Defining schema for Impressions stream
+val impressionSchema = StructType(List(
+    StructField("ImpressionID", StringType),
+    StructField("ImpressionTime", TimestampType),
+    StructField("CampaignName", StringType),
+    ))
+    
+//Defining schema for clicks stream  
+ val clickSchema = StructType(List(
+    StructField("clickID", StringType),
+    StructField("ClickTime", TimestampType),
+    ))   
+    
+//1. read from the socket - Impressions.
+val impressionsDf = spark.readStream
+.format("socket")
+.option("host","localhost")
+.option("port","12345")
+.load()
+
+//2. read from the socket - Clicks.
+val clicksDf = spark.readStream
+.format("socket")
+.option("host","localhost")
+.option("port","12345")
+.load()
+
+//Structure the data based on the schema defined - ImpressionDf
+//To extract the values from json file and imposing our own schema on the top of that.
+val valueDf1 = impressionsDf.select(from_json(col("value"),impressionSchema).alias("value"))
+val impressionsDfNew = valueDf1.select("value.*")
+.withWatermark("ImpressionTime","30 minute")
+
+//Structure the data based on the schema defined - clicksDf
+val valueDf2 = clicksDf.select(from_json(col("value"),clickSchema).alias("value"))
+val clicksDfNew = valueDf2.select("value.*")
+.withWatermark("ClickTime","30 minute")
+ 
+
+//Join Condition
+val joinExpr = impressionsDfNew.col("ImpressionID") === clicksDfNew.col("clickID")
+
+//join Type
+val joinType = "inner"
+
+//Joining both the streaming data frames
+val joinedDf = impressionsDfNew.join(clicksDfNew,joinExpr,joinType)
+.drop(clicksDfNew.col("clickID"))
+    
+//Write to the sink
+val campaignQuery = joinedDf.writeStream
+.format("console")
+.outputMode("update")
+.option("checkpointLocation","checkpoint-location1")
+.trigger(Trigger.ProcessingTime("15 second"))
+.start
+
+campaignQuery.awaitTermination()
+
+}
+
+So, now the problem is if we don't the clean the statestore, it will very quickly fill up the memory of statestore and it can give error.
+So, we need to make sure we clean the state store to avoid out of memory issues.
+
+So, how to clean the statestore
+==========================
+watermark boundry.
+
+
+Spark Streaming Session - 22
+========================
+
+when both the dataframes are streaming
+=================================
+
+inner - recommended to use watermark for state store clean.
+
+Left outer Join - 
+1. there should be watermark on the right side stream. (you can have it on both sides too)
+2. Maximum time constraint between the left and the right side streams.
+for example if a impression happens at 10 pm then a click on that before 10:15 pm will only be considered..
+
+Right outer Join- 
+1. there should be watermark on the left side stream. (you can have it on both sides too)
+2. Maximum time constraint between the left and the right side streams. 
+for example if a impression happens at 10 pm then a click on that before 10:15 pm will only be considered..
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
